@@ -10,6 +10,7 @@ import math
 import os
 import sys
 import threading
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -429,6 +430,25 @@ def already_running() -> bool:
     return alive
 
 
+def wait_previous_instance() -> bool:
+    """返回 True 表示不该启动（已有实例在跑）。
+
+    自动更新后重启时，旧进程可能还没退干净。这时如果直接判定「重复启动」，
+    新版本会立刻退出，界面上看起来就是更新完什么都没了 —— 所以带
+    --restarted 时多等一会儿。
+    """
+    if not already_running():
+        return False
+    if update.RESTART_FLAG not in sys.argv:
+        return True
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        time.sleep(0.3)
+        if not already_running():
+            return False
+    return True
+
+
 def serve_single_instance(on_ping) -> QLocalServer:
     QLocalServer.removeServer(SERVER_NAME)
     server = QLocalServer()
@@ -463,10 +483,13 @@ def main() -> int:
         app.setQuitOnLastWindowClosed(False)
         app.setWindowIcon(app_icon())
 
-        if already_running():
+        if wait_previous_instance():
             return 0
 
         mate = DeskMate(app)
+        update.mark_started()
+        # 上一版留的 .old.exe 等一会儿再删：万一本进程起不来，老版本还要靠它还原
+        QTimer.singleShot(20000, update.drop_old_copy)
         server = serve_single_instance(mate.show_card)
         app._deskmate_server = server  # 保活
 

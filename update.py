@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
 import re
 import subprocess
 import sys
@@ -137,8 +139,28 @@ class UpdateChecker(QObject):
 # ---------------------------------------------------------------- 下载与替换
 
 
+SUMS_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/SHA256SUMS"
+
+
+def _looks_like_exe(path: Path) -> bool:
+    """最基础的完整性判断：Windows 可执行文件必须以 MZ 开头。"""
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(2) == b"MZ"
+    except OSError:
+        return False
+
+
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 class UpdateDownloader(QObject):
-    """把新版本 exe 下到临时目录，带进度回调。"""
+    """下载新版 exe，并和仓库里的 SHA256SUMS 比对后才算可用。"""
 
     progress = Signal(int, int)      # 已下载字节, 总字节
     finished = Signal(str, str)      # 文件路径, 错误
@@ -151,11 +173,15 @@ class UpdateDownloader(QObject):
         self._file = None
         self._target: Path | None = None
         self._part: Path | None = None
+        self._expect = ""
+        self._bad: list[str] = []    # 网络错误时堆叠的信息
 
     def start(self) -> None:
         UPDATE_DIR.mkdir(parents=True, exist_ok=True)
         self._target = UPDATE_DIR / "DeskMate.exe"
         self._part = UPDATE_DIR / "DeskMate.part"
+        self._expect = ""
+        self._bad.clear()
         try:
             self._file = open(self._part, "wb")
         except OSError as exc:
@@ -193,22 +219,81 @@ class UpdateDownloader(QObject):
                 self._file = None
         except OSError:
             pass
+        reply.deleteLater()
 
         if not error and self._part is not None and self._target is not None:
             size = self._part.stat().st_size if self._part.exists() else 0
             if size < self.MIN_SIZE:
                 error = "下载到的文件不完整"
+            elif not _looks_like_exe(self._part):
+                error = "下载到的不是可执行文件"
             else:
                 try:
                     os.replace(self._part, self._target)
                 except OSError as exc:
                     error = f"保存失败：{exc}"
-        reply.deleteLater()
 
         if error:
             self.finished.emit("", error)
-        else:
+            return
+        self._fetch_sums()
+
+    def _fetch_sums(self) -> None:
+        """再拉一次 SHA256SUMS；拉不到就只靠 MZ + 体积判断，不卡住用户。"""
+        request = QNetworkRequest(QUrl(f"{SUMS_URL}?t={int(time.time())}"))
+        request.setHeader(
+            QNetworkRequest.KnownHeaders.UserAgentHeader,
+            "Mozilla/5.0 DeskMate-Update",
+        )
+        request.setTransferTimeout(15000)
+        reply = self._nam.get(request)
+
+        def done(r=reply) -> None:
+            text = ""
+            try:
+                if r.error() == QNetworkReply.NetworkError.NoError:
+                    text = bytes(r.readAll()).decode("utf-8", "ignore")
+            except Exception:
+                text = ""
+            finally:
+                r.deleteLater()
+            self._expect = self._parse_sums(text)
+            self._verify()
+
+        reply.finished.connect(done)
+
+    @staticmethod
+    def _parse_sums(text: str) -> str:
+        for raw in (text or "").splitlines():
+            parts = raw.split()
+            if len(parts) >= 2 and parts[-1].lstrip("*") == "DeskMate.exe":
+                candidate = parts[0].lower()
+                if len(candidate) == 64:
+                    return candidate
+        return ""
+
+    def _verify(self) -> None:
+        assert self._target is not None
+        if not self._expect:
+            # 没有校验文件：宁可放过，给出提示后仍允许更新
             self.finished.emit(str(self._target), "")
+            return
+        try:
+            actual = sha256_of(self._target)
+        except OSError as exc:
+            self.finished.emit("", f"读取下载文件失败：{exc}")
+            return
+        if actual != self._expect:
+            try:
+                self._target.unlink()
+            except OSError:
+                pass
+            self.finished.emit("", "下载的文件校验不通过，已放弃本次更新")
+            return
+        self.finished.emit(str(self._target), "")
+
+
+RESTART_FLAG = "--restarted"
 
 
 def can_self_update() -> bool:
@@ -216,39 +301,131 @@ def can_self_update() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
-def apply_update(new_exe: Path) -> tuple[bool, str]:
-    """用批处理在程序退出后替换 exe 并重启。返回是否已交给脚本。"""
-    target = Path(sys.executable).resolve() if getattr(sys, "frozen", False) else None
-    if target is None:
-        return False, "开发模式下不支持自动更新"
-    if not Path(new_exe).exists():
-        return False, "找不到下载好的文件"
+def current_exe() -> Path | None:
+    if not getattr(sys, "frozen", False):
+        return None
+    try:
+        return Path(sys.executable).resolve()
+    except OSError:
+        return None
 
-    script = UPDATE_DIR / "apply.bat"
+
+def mark_started() -> None:
+    """跑起来就在临时目录盖个章，更新脚本靠它判断新版本真的启动了。"""
+    try:
+        UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+        (UPDATE_DIR / "started.txt").write_text(
+            f"{int(time.time())} {sys.argv[0]}", encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+
+def started_after(stamp: float) -> bool:
+    marker = UPDATE_DIR / "started.txt"
+    try:
+        return marker.exists() and marker.stat().st_mtime >= stamp - 1
+    except OSError:
+        return False
+
+
+def clear_started() -> None:
+    try:
+        (UPDATE_DIR / "started.txt").unlink()
+    except OSError:
+        pass
+
+
+def drop_old_copy(target: Path | None = None) -> None:
+    """启动时清掉上次留下的 .old.exe；删不掉说明还有旧进程在跑，忽略即可。"""
+    target = target or current_exe()
+    if target is None:
+        return
+    backup = target.with_suffix(".old.exe")
+    if not backup.exists():
+        return
+    try:
+        backup.unlink()
+    except OSError:
+        pass
+
+
+def apply_update(
+    new_exe: Path, target: Path | None = None
+) -> tuple[bool, str, "subprocess.Popen[bytes] | None"]:
+    """就地替换：把正在运行的 exe 改名备份 → 新文件就位 → 拉起新进程。
+
+    Windows 允许重命名正在运行的可执行文件（只是不能覆盖/删除），
+    所以整个替换可以在进程内完成，不需要外部脚本。
+    返回 (是否成功, 错误信息, 新进程句柄)。
+    """
+    target = Path(target).resolve() if target else current_exe()
+    if target is None:
+        return False, "开发模式下不支持自动更新", None
+    new_exe = Path(new_exe).resolve()
+    if not new_exe.exists():
+        return False, "找不到下载好的文件", None
+    if not _looks_like_exe(new_exe):
+        return False, "更新包不是有效的可执行文件", None
+    try:
+        if new_exe.stat().st_size < UpdateDownloader.MIN_SIZE:
+            return False, "更新包不完整", None
+    except OSError as exc:
+        return False, f"读取更新包失败：{exc}", None
+
     backup = target.with_suffix(".old.exe")
     try:
-        script.write_text(
-            "@echo off\r\n"
-            "chcp 65001 >nul\r\n"
-            "timeout /t 2 /nobreak >nul\r\n"
-            "taskkill /f /im \"DeskMate.exe\" >nul 2>&1\r\n"
-            "timeout /t 1 /nobreak >nul\r\n"
-            f'if exist "{backup}" del /f /q "{backup}" >nul 2>&1\r\n'
-            f'copy /y "{target}" "{backup}" >nul 2>&1\r\n'
-            f'move /y "{new_exe}" "{target}" >nul 2>&1\r\n'
-            f'start "" "{target}"\r\n'
-            'del /f /q "%~f0" >nul 2>&1\r\n',
-            encoding="utf-8",
-        )
+        if backup.exists():
+            try:
+                backup.unlink()
+            except OSError:
+                pass
+        os.replace(target, backup)
     except OSError as exc:
-        return False, f"写更新脚本失败：{exc}"
+        return False, f"备份当前版本失败：{exc}", None
 
     try:
-        subprocess.Popen(
-            ["cmd", "/c", str(script)],
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        shutil.move(str(new_exe), str(target))
+    except OSError as exc:
+        try:
+            os.replace(backup, target)
+        except OSError:
+            pass
+        return False, f"替换失败，已还原旧版本：{exc}", None
+
+    clear_started()
+    flags = 0
+    for name in ("DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP", "CREATE_NO_WINDOW"):
+        flags |= int(getattr(subprocess, name, 0))
+    try:
+        proc = subprocess.Popen(
+            [str(target), RESTART_FLAG],
+            cwd=str(target.parent),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
             close_fds=True,
         )
     except OSError as exc:
-        return False, f"启动更新脚本失败：{exc}"
-    return True, ""
+        try:
+            os.replace(backup, target)
+        except OSError:
+            pass
+        return False, f"启动新版本失败，已还原：{exc}", None
+    return True, "", proc
+
+
+def rollback(target: Path | None = None) -> bool:
+    """把 .old.exe 换回来，用于新版本起不来的兜底。"""
+    target = Path(target).resolve() if target else current_exe()
+    if target is None:
+        return False
+    backup = target.with_suffix(".old.exe")
+    if not backup.exists():
+        return False
+    try:
+        os.replace(backup, target)
+        return True
+    except OSError:
+        return False
