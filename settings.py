@@ -19,13 +19,16 @@ from PySide6.QtGui import (
     QRegularExpressionValidator,
 )
 from PySide6.QtCore import QRegularExpression
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -263,9 +266,18 @@ class SettingsWindow(QDialog):
         root.addWidget(self._divider())
         root.addSpacing(10)
 
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        inner = QWidget()
+        body = QVBoxLayout(inner)
+        body.setContentsMargins(0, 0, 6, 0)
+        body.setSpacing(0)
+
         # ---- 作息 ----
-        root.addWidget(self._section("作息"))
-        root.addSpacing(9)
+        body.addWidget(self._section("作息"))
+        body.addSpacing(9)
 
         self.start_edit = TimeField()
         self.off_edit = TimeField()
@@ -280,18 +292,18 @@ class SettingsWindow(QDialog):
         grid.addWidget(self.off_edit, 0, 4)
         grid.setColumnStretch(2, 5)
         grid.setColumnStretch(5, 4)
-        root.addLayout(grid)
+        body.addLayout(grid)
 
-        root.addSpacing(11)
+        body.addSpacing(11)
 
         self.pre_spin = NumField(0, 60)
-        root.addLayout(self._value_row("提前提醒", self.pre_spin, "分钟前"))
-        root.addSpacing(7)
-        root.addWidget(self._hint("设为 0 则只在到点时提醒一次"))
+        body.addLayout(self._value_row("提前提醒", self.pre_spin, "分钟前"))
+        body.addSpacing(7)
+        body.addWidget(self._hint("设为 0 则只在到点时提醒一次"))
 
-        root.addSpacing(13)
-        root.addWidget(self._section("工作日"))
-        root.addSpacing(9)
+        body.addSpacing(13)
+        body.addWidget(self._section("工作日"))
+        body.addSpacing(9)
 
         chips = QHBoxLayout()
         chips.setSpacing(5)
@@ -306,27 +318,27 @@ class SettingsWindow(QDialog):
             self.week_buttons.append(chip)
             chips.addWidget(chip)
         chips.addStretch(1)
-        root.addLayout(chips)
+        body.addLayout(chips)
 
-        root.addSpacing(14)
-        root.addWidget(self._divider())
-        root.addSpacing(10)
+        body.addSpacing(14)
+        body.addWidget(self._divider())
+        body.addSpacing(10)
 
         # ---- 久坐 ----
-        root.addWidget(self._section("久坐提醒"))
-        root.addSpacing(9)
+        body.addWidget(self._section("久坐提醒"))
+        body.addSpacing(9)
 
         self.sit_check = Check("久坐后提醒我起身活动")
-        root.addWidget(self.sit_check)
-        root.addSpacing(9)
+        body.addWidget(self.sit_check)
+        body.addSpacing(9)
 
         self.sit_spin = NumField(5, 180, step=5)
-        root.addLayout(self._value_row("间隔", self.sit_spin, "分钟"))
-        root.addSpacing(10)
+        body.addLayout(self._value_row("间隔", self.sit_spin, "分钟"))
+        body.addSpacing(10)
 
         self.lunch_check = Check("午休时间不打扰")
-        root.addWidget(self.lunch_check)
-        root.addSpacing(7)
+        body.addWidget(self.lunch_check)
+        body.addSpacing(7)
 
         self.lunch_start = TimeField()
         self.lunch_end = TimeField()
@@ -340,27 +352,39 @@ class SettingsWindow(QDialog):
         lunch_row.addWidget(dash)
         lunch_row.addWidget(self.lunch_end)
         lunch_row.addStretch(1)
-        root.addLayout(lunch_row)
+        body.addLayout(lunch_row)
 
-        root.addSpacing(14)
-        root.addWidget(self._divider())
-        root.addSpacing(10)
+        body.addSpacing(14)
+        body.addWidget(self._divider())
+        body.addSpacing(10)
+
+        # ---- 喝水 ----
+        body.addWidget(self._section("喝水提醒"))
+        body.addSpacing(9)
+        self.drink_check = Check("该喝水时提醒我")
+        body.addWidget(self.drink_check)
+        body.addSpacing(7)
+        self.drink_spin = NumField(15, 180, step=15)
+        body.addLayout(self._value_row("间隔", self.drink_spin, "分钟"))
+        body.addSpacing(14)
+        body.addWidget(self._divider())
+        body.addSpacing(10)
 
         # ---- 周报 ----
-        root.addWidget(self._section("周报提醒"))
-        root.addSpacing(9)
+        body.addWidget(self._section("周报提醒"))
+        body.addSpacing(9)
         self.report_check = Check("本周最后一个工作日提醒写周报")
-        root.addWidget(self.report_check)
-        root.addSpacing(7)
+        body.addWidget(self.report_check)
+        body.addSpacing(7)
         self.report_time = TimeField()
-        root.addLayout(self._value_row("提醒时间", self.report_time, ""))
-        root.addSpacing(14)
-        root.addWidget(self._divider())
-        root.addSpacing(10)
+        body.addLayout(self._value_row("提醒时间", self.report_time, ""))
+        body.addSpacing(14)
+        body.addWidget(self._divider())
+        body.addSpacing(10)
 
         # ---- 角色主题 ----
-        root.addWidget(self._section("角色主题"))
-        root.addSpacing(9)
+        body.addWidget(self._section("角色主题"))
+        body.addSpacing(9)
         theme_row = QHBoxLayout()
         theme_row.setContentsMargins(0, 0, 0, 0)
         theme_row.setSpacing(8)
@@ -376,13 +400,13 @@ class SettingsWindow(QDialog):
         theme_row.addWidget(self._field("当前主题"))
         theme_row.addWidget(self.theme_value, 1)
         theme_row.addWidget(manage_theme, 0)
-        root.addLayout(theme_row)
-        root.addSpacing(6)
-        root.addWidget(self._hint("切换立即生效，不用点保存"))
+        body.addLayout(theme_row)
+        body.addSpacing(6)
+        body.addWidget(self._hint("切换立即生效，不用点保存"))
 
-        root.addSpacing(14)
-        root.addWidget(self._divider())
-        root.addSpacing(10)
+        body.addSpacing(14)
+        body.addWidget(self._divider())
+        body.addSpacing(10)
 
         # ---- 其它 ----
         city_row = QHBoxLayout()
@@ -397,17 +421,31 @@ class SettingsWindow(QDialog):
         self.city_edit.setPlaceholderText("留空按网络定位，可填 Beijing / 上海")
         city_row.addWidget(city_label)
         city_row.addWidget(self.city_edit, 1)
-        root.addLayout(city_row)
-        root.addSpacing(10)
+        body.addLayout(city_row)
+        body.addSpacing(10)
 
         self.sound_check = Check("提醒时播放提示音")
-        root.addWidget(self.sound_check)
-        root.addSpacing(6)
+        body.addWidget(self.sound_check)
+        body.addSpacing(6)
 
         self.startup_check = Check("开机自动启动")
-        root.addWidget(self.startup_check)
+        body.addWidget(self.startup_check)
 
-        root.addSpacing(16)
+        body.addStretch(1)
+        inner.setObjectName("settingsInner")
+        inner.setStyleSheet("QWidget#settingsInner { background: transparent; }")
+        scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollBar:vertical { width: 8px; background: transparent; margin: 2px 0; }"
+            "QScrollBar::handle:vertical {"
+            " background: rgba(255,255,255,46); border-radius: 4px; min-height: 32px; }"
+            "QScrollBar::handle:vertical:hover { background: rgba(255,255,255,78); }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
+        )
+        scroll.setWidget(inner)
+        root.addWidget(scroll, 1)
+        root.addSpacing(14)
 
         footer = QHBoxLayout()
         footer.setSpacing(10)
@@ -428,6 +466,12 @@ class SettingsWindow(QDialog):
         footer.addWidget(cancel)
         footer.addWidget(save)
         root.addLayout(footer)
+
+        inner.adjustSize()
+        chrome = 150          # 标题栏 + 两条分隔 + 底部按钮区
+        wanted = inner.sizeHint().height() + chrome
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        self.setFixedHeight(min(wanted, int(area.height() * 0.86)))
 
     # ------------------------------------------------------------ 小零件
 
@@ -487,6 +531,8 @@ class SettingsWindow(QDialog):
         self.lunch_check.setChecked(bool(self.cfg["lunch_enabled"]))
         self.lunch_start.setTime(_to_qtime(self.cfg["lunch_start"], "12:00"))
         self.lunch_end.setTime(_to_qtime(self.cfg["lunch_end"], "13:30"))
+        self.drink_check.setChecked(bool(self.cfg["drink_enabled"]))
+        self.drink_spin.setValue(int(self.cfg["drink_interval"] or 60))
         self.report_check.setChecked(bool(self.cfg["weekly_report_enabled"]))
         self.report_time.setTime(_to_qtime(self.cfg["weekly_report_time"], "17:40"))
         self.refresh_theme()
@@ -513,6 +559,8 @@ class SettingsWindow(QDialog):
                 "lunch_enabled": self.lunch_check.isChecked(),
                 "lunch_start": self.lunch_start.time().toString("HH:mm"),
                 "lunch_end": self.lunch_end.time().toString("HH:mm"),
+                "drink_enabled": self.drink_check.isChecked(),
+                "drink_interval": self.drink_spin.value(),
                 "weekly_report_enabled": self.report_check.isChecked(),
                 "weekly_report_time": self.report_time.time().toString("HH:mm"),
                 "weather_city": self.city_edit.text().strip(),

@@ -42,6 +42,9 @@ class Snapshot:
     sit_reason: str = "ok"       # ok | lunch | paused | rest | off
     paused: bool = False
     report_due: bool = False     # 今天是本周最后一个工作日且已过提醒时间
+    drink_state: str = "empty"   # empty | half | full
+    drink_cups: int = 0          # 今天喝了几杯
+    drink_left: int = 0          # 距下次喝水还有几分钟
 
 
 @dataclass
@@ -59,6 +62,9 @@ class Engine:
         self._last = datetime.now()
         self._report_day = None
         self.report_again_at = None
+        self.drink_start = datetime.now()
+        self.drink_alerts = 0
+        self.drink_last_alert = None
         self.sit_start = datetime.now()
         self.sit_alerts = 0
         self.sit_last_alert: Optional[datetime] = None
@@ -90,6 +96,24 @@ class Engine:
     def mark_report_done(self) -> None:
         """点了「写过了」：今天不再提醒（写进配置，重启也不提醒）。"""
         self.cfg["report_done_date"] = datetime.now().date().isoformat()
+        self.cfg.save()
+
+    def snooze_drink(self, minutes: int = 10) -> None:
+        """「10 分钟后」：重置计数，过一会儿再催。"""
+        self.drink_last_alert = datetime.now()
+        self.drink_alerts = 0
+
+    def drink_done(self) -> None:
+        """点了水杯：记一杯，从头计时。"""
+        self.drink_start = datetime.now()
+        self.drink_alerts = 0
+        self.drink_last_alert = None
+        today = datetime.now().date().isoformat()
+        cups = int(self.cfg["drink_cups"] or 0)
+        if str(self.cfg["drink_cups_date"] or "") != today:
+            cups = 0
+        self.cfg["drink_cups"] = cups + 1
+        self.cfg["drink_cups_date"] = today
         self.cfg.save()
 
     def snooze_report(self, minutes: int = 10) -> None:
@@ -231,6 +255,34 @@ class Engine:
                         Event("sit", minutes=int(sit_minutes), hard=self.sit_alerts >= 3)
                     )
 
+        # ---- 喝水 ----
+        drink_state = "empty"
+        drink_left = 0
+        cups = int(self.cfg["drink_cups"] or 0)
+        if str(self.cfg["drink_cups_date"] or "") != now.date().isoformat():
+            cups = 0
+        if self.cfg["drink_enabled"] and sit_active:
+            interval = max(15, int(self.cfg["drink_interval"] or 60))
+            elapsed = max(0.0, (now - self.drink_start).total_seconds() / 60.0)
+            ratio = elapsed / interval
+            drink_left = max(0, int(round(interval - elapsed)))
+            if ratio >= 1.0:
+                drink_state = "full"
+                due = (
+                    self.drink_last_alert is None
+                    or (now - self.drink_last_alert).total_seconds() >= 600
+                )
+                if due and self.drink_alerts < 3:
+                    self.drink_alerts += 1
+                    self.drink_last_alert = now
+                    events.append(Event("drink"))
+            elif ratio >= 0.75:
+                drink_state = "half"
+        else:
+            self.drink_start = now
+            self.drink_alerts = 0
+            self.drink_last_alert = None
+
         self.snapshot = Snapshot(
             now=now,
             phase=phase,
@@ -243,6 +295,9 @@ class Engine:
             sit_reason=sit_reason,
             paused=paused,
             report_due=report_due,
+            drink_state=drink_state,
+            drink_cups=cups,
+            drink_left=drink_left,
         )
         return events
 

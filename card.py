@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from config import APP_TITLE
 from engine import OFF, PRE, REST, WORK, Snapshot, fmt_hms
 import char_theme
+from cup import DrinkCup
 from fish import IDLE_EXPR, OFF_IDLE_EXPR, FishState
 from weather import WeatherBadge, WeatherService
 from theme import (
@@ -167,6 +168,7 @@ class MainCard(QWidget):
     request_menu = Signal(QPoint)
     request_hide = Signal()
     request_stand = Signal()
+    request_drink = Signal()
     moved = Signal()
 
     def __init__(self, cfg, engine) -> None:
@@ -246,7 +248,15 @@ class MainCard(QWidget):
         self.big.setFont(mono_font(30, QFont.Weight.DemiBold))
         self.big.setStyleSheet(f"color: {TEXT_HI}; padding: 0;")
         self.big.setFixedHeight(38)
-        root.addWidget(self.big)
+        big_row = QHBoxLayout()
+        big_row.setContentsMargins(0, 0, 0, 0)
+        big_row.setSpacing(0)
+        big_row.addWidget(self.big)
+        big_row.addStretch(1)
+        self.cup = DrinkCup(self)
+        self.cup.clicked.connect(self.request_drink.emit)
+        big_row.addWidget(self.cup, 0, Qt.AlignmentFlag.AlignBottom)
+        root.addLayout(big_row)
 
         root.addSpacing(8)
 
@@ -334,6 +344,8 @@ class MainCard(QWidget):
                 self.dot.set_state(ORANGE, pulse)
             else:
                 self.dot.set_state(MINT, 0.72 + 0.28 * pulse)
+
+        self.cup.set_state(snap.drink_state, snap.drink_cups, snap.drink_left)
 
         # 久坐一行
         if not snap.sit_active:

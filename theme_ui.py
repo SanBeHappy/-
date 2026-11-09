@@ -667,6 +667,52 @@ class ThemeEditorWindow(DarkDialog):
         QTimer.singleShot(2200, tip.deleteLater)
 
 
+class UpdateDialog(DarkDialog):
+    """发现新版本时先看更新日志，再决定去不去。"""
+
+    def __init__(self, version: str, current: str, notes: list[str], parent=None) -> None:
+        super().__init__("发现新版本", 440, parent=parent)
+        body = self.body()
+
+        head = QHBoxLayout()
+        big = QLabel(f"v{version}")
+        big.setFont(ui_font(24, QFont.Weight.DemiBold))
+        big.setStyleSheet(f"color: {MINT}; padding: 0;")
+        head.addWidget(big)
+        head.addSpacing(10)
+        head.addWidget(self._hint(f"你现在用的是 v{current}"), 0, Qt.AlignmentFlag.AlignBottom)
+        head.addStretch(1)
+        body.addLayout(head)
+        body.addSpacing(14)
+
+        body.addWidget(self._section("更新内容"))
+        body.addSpacing(9)
+
+        if notes:
+            for note in notes[:6]:
+                item = QLabel(f"·  {note}")
+                item.setWordWrap(True)
+                item.setFont(ui_font(12))
+                item.setStyleSheet(f"color: {TEXT_MID}; padding: 0;")
+                body.addWidget(item)
+                body.addSpacing(5)
+        else:
+            body.addWidget(self._hint("这次没写更新说明，去仓库看看提交记录。"))
+
+        body.addSpacing(18)
+        footer = QHBoxLayout()
+        later = self._ghost("以后再说", 92)
+        later.clicked.connect(self.reject)
+        go = self._primary("去下载")
+        go.clicked.connect(self.accept)
+        footer.addStretch(1)
+        footer.addWidget(later)
+        footer.addSpacing(8)
+        footer.addWidget(go)
+        body.addLayout(footer)
+        self.adjustSize()
+
+
 # ---------------------------------------------------------------- 简易确认框
 
 

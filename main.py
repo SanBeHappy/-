@@ -26,7 +26,7 @@ from card import MainCard
 from config import APP_TITLE, APP_VERSION, Config
 from engine import Engine
 from settings import SettingsWindow
-from theme_ui import ThemeEditorWindow, ThemeManagerWindow
+from theme_ui import ThemeEditorWindow, ThemeManagerWindow, UpdateDialog
 from theme import MINT, ORANGE, SETTINGS_QSS, app_icon
 from toast import (
     ToastManager,
@@ -34,6 +34,7 @@ from toast import (
     show_off_work,
     show_pre_off,
     show_sit,
+    show_drink,
     show_report,
 )
 
@@ -109,6 +110,7 @@ class DeskMate:
         self.card.request_menu.connect(self.popup_menu)
         self.card.request_hide.connect(self.toggle_card)
         self.card.request_stand.connect(self.reset_sit)
+        self.card.request_drink.connect(self.drink_done)
 
         self.tray = self._build_tray()
 
@@ -279,6 +281,11 @@ class DeskMate:
         # 只刷新界面，不动久坐计时 —— 改设置不该把「已经坐了多久」清零
         self.on_tick()
 
+    def drink_done(self) -> None:
+        """点了水杯：记一杯，重新计时。"""
+        self.engine.drink_done()
+        self.on_tick()
+
     def reset_sit(self) -> None:
         """卡片上点「起来了」：重置久坐计时。"""
         self.engine.stand_up()
@@ -290,7 +297,7 @@ class DeskMate:
             self.updater.finished.connect(self.on_update_result)
         self.updater.check()
 
-    def on_update_result(self, remote: str, error: str) -> None:
+    def on_update_result(self, remote: str, error: str, notes: list) -> None:
         if error:
             self.toasts.show(
                 ORANGE, "检查更新失败", error,
@@ -299,14 +306,10 @@ class DeskMate:
             )
             return
         if update.is_newer(remote, APP_VERSION):
-            self.toasts.show(
-                ORANGE,
-                f"发现新版本 v{remote}",
-                f"你现在用的是 v{APP_VERSION}，去仓库看看更新了什么。",
-                [("以后再说", "ghost", "noop"), ("去看看", "primary", "open_repo")],
-                self.on_toast_action,
-                auto_close_ms=25000,
-            )
+            dialog = UpdateDialog(remote, APP_VERSION, notes, None)
+            dialog.setWindowIcon(app_icon())
+            if dialog.exec() == dialog.DialogCode.Accepted:
+                update.open_repo()
         else:
             self.toasts.show(
                 MINT,
@@ -358,6 +361,10 @@ class DeskMate:
         elif event.kind == "off_again":
             self._sound("off")
             show_off_again(self.toasts, self.on_toast_action)
+        elif event.kind == "drink":
+            self.card.fish.react("sit")
+            show_drink(self.toasts, self.engine.snapshot.drink_cups, self.on_toast_action)
+            return
         elif event.kind == "weekly_report":
             self._sound("pre")
             show_report(self.toasts, event.monthly, self.on_toast_action)
@@ -378,6 +385,10 @@ class DeskMate:
             self.engine.stand_up()
         elif key == "sit_snooze":
             self.engine.snooze_sit()
+        elif key == "drink_ok":
+            self.drink_done()
+        elif key == "drink_snooze":
+            self.engine.snooze_drink(10)
         elif key == "open_repo":
             update.open_repo()
         elif key == "report_ok":

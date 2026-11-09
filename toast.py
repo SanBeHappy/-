@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 from theme import (
     BASE_QSS,
     BG,
+    BLUE,
     CARD_BG,
     MINT,
     ORANGE,
@@ -268,6 +269,28 @@ REPORT_LINES = (
     "趁还记得，把能拿得出手的事先写上。",
     "别攒到周一，那时候细节就忘了。",
 )
+
+
+DRINK_LINES = (
+    "起身接杯水，顺便把脖子转两圈。",
+    "喝两口，别让嗓子一直干着。",
+    "水杯该续了，趁现在脑子里的事正好告一段落。",
+)
+
+
+def show_drink(mgr: ToastManager, cups: int, on_action) -> None:
+    title = "该喝水了"
+    body = random.choice(DRINK_LINES)
+    if cups > 0:
+        body = f"今天第 {cups + 1} 杯。{body}"
+    mgr.show(
+        BLUE,
+        title,
+        body,
+        [("10 分钟后", "ghost", "drink_snooze"), ("喝了", "primary", "drink_ok")],
+        on_action,
+        auto_close_ms=25000,
+    )
 
 
 MONTHLY_LINES = (
