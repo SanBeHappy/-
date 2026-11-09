@@ -119,6 +119,7 @@ class DeskMate:
         self.card.request_hide.connect(self.toggle_card)
         self.card.request_drink.connect(self.drink_done)
         self.card.request_update.connect(lambda: self.check_update())
+        self.toasts.anchor = self._toast_anchor
 
         self.tray = self._build_tray()
 
@@ -305,6 +306,12 @@ class DeskMate:
         self.engine.drink_done()
         self.card.fish.react("drink")
         self.on_tick()
+
+    def _toast_anchor(self):
+        """提醒窗贴在卡片旁边，别压住倒计时。"""
+        if self.card is None or not self.card.isVisible():
+            return None
+        return self.card.frameGeometry()
 
     def reset_drink(self) -> None:
         """托盘 / 卡片菜单：把喝水计时归零（不记杯数）。"""

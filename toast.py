@@ -58,6 +58,7 @@ class Toast(QWidget):
         actions: list[tuple[str, str, str]],
         on_action: Callable[[str], None],
         auto_close_ms: int = 0,
+        pinned: bool = False,
     ) -> None:
         super().__init__(
             None,
@@ -72,6 +73,7 @@ class Toast(QWidget):
 
         self._accent = accent
         self._on_action = on_action
+        self.pinned = pinned          # True = 不自动关，也不许被别的提醒顶掉
         self._closing = False
         self._anim: QPropertyAnimation | None = None
 
@@ -203,6 +205,9 @@ class ToastManager:
     def __init__(self, cfg) -> None:
         self.cfg = cfg
         self.current: Toast | None = None
+        self._pending: tuple | None = None
+        # 由外部挂一个「卡片在哪」的回调，提醒窗要躲开它，别压住倒计时
+        self.anchor = None
 
     def show(
         self,
@@ -212,29 +217,79 @@ class ToastManager:
         actions: list[tuple[str, str, str]],
         on_action: Callable[[str], None],
         auto_close_ms: int = 0,
-    ) -> Toast:
+        pinned: bool = False,
+        urgent: bool = False,
+    ) -> Toast | None:
+        """pinned=True 的提醒不会自动消失，也不会被后来的提醒顶掉。
+
+        urgent=True 的是下班、周报这类错过就麻烦的提醒，允许盖掉常驻窗。
+        """
         if self.current is not None:
             try:
+                if self.current.pinned and not urgent:
+                    # 常驻的还在，后来的先排队，等它被点掉再显示
+                    self._pending = (
+                        accent, title, body, actions, on_action, auto_close_ms, pinned
+                    )
+                    return None
                 self.current.close_toast()
             except RuntimeError:
                 pass
-        toast = Toast(accent, title, body, actions, on_action, auto_close_ms)
+        return self._create(
+            accent, title, body, actions, on_action, auto_close_ms, pinned
+        )
+
+    def _create(
+        self,
+        accent: str,
+        title: str,
+        body: str,
+        actions: list[tuple[str, str, str]],
+        on_action: Callable[[str], None],
+        auto_close_ms: int,
+        pinned: bool,
+    ) -> Toast:
+        toast = Toast(accent, title, body, actions, on_action, auto_close_ms, pinned)
         self.current = toast
-        toast.dismissed.connect(self._clear)
+        toast.dismissed.connect(lambda t=toast: self._clear(t))
         x, y = self._slot(toast)
         toast.show_at(x, y)
         return toast
 
-    def _clear(self) -> None:
-        self.current = None
+    def _clear(self, toast: Toast | None = None) -> None:
+        # 被顶掉的旧提醒也会走到这里，别把刚显示的那条误清掉
+        if toast is None or self.current is toast:
+            self.current = None
+        if self.current is None and self._pending is not None:
+            args = self._pending
+            self._pending = None
+            self._create(*args)
 
     def _slot(self, toast: Toast) -> tuple[int, int]:
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         area = screen.availableGeometry()
-        return (
+        fallback = (
             area.right() - toast.width() - 18,
             area.bottom() - toast.height() - 18,
         )
+
+        card = None
+        if callable(self.anchor):
+            try:
+                card = self.anchor()
+            except Exception:
+                card = None
+        if card is None or not card.isValid():
+            return fallback
+
+        # 优先放卡片左边，底边对齐；放不下就放卡片上方
+        x = card.left() - toast.width() - 12
+        if x >= area.left():
+            return x, max(area.top(), card.bottom() - toast.height())
+        y = card.top() - toast.height() - 12
+        if y >= area.top():
+            return max(area.left(), card.right() - toast.width()), y
+        return fallback
 
 
 # ---------------------------------------------------------------- 预设文案
@@ -279,6 +334,9 @@ DRINK_LINES = (
 
 
 def show_drink(mgr: ToastManager, cups: int, on_action) -> None:
+    current = mgr.current
+    if current is not None and getattr(current, "pinned", False):
+        return                      # 已经挂着一条了，别叠第二条一样的
     title = "该喝水了"
     body = random.choice(DRINK_LINES)
     if cups > 0:
@@ -289,7 +347,8 @@ def show_drink(mgr: ToastManager, cups: int, on_action) -> None:
         body,
         [("10 分钟后", "ghost", "drink_snooze"), ("喝了", "primary", "drink_ok")],
         on_action,
-        auto_close_ms=25000,
+        auto_close_ms=0,
+        pinned=True,
     )
 
 
@@ -313,6 +372,7 @@ def show_report(mgr: ToastManager, monthly: bool, on_action) -> None:
         [("10 分钟后", "ghost", "report_snooze"), ("写过了", "primary", "report_ok")],
         on_action,
         auto_close_ms=30000,
+        urgent=True,
     )
 
 
@@ -324,6 +384,7 @@ def show_off_work(mgr: ToastManager, on_action) -> None:
         [("再等 10 分钟", "ghost", "off_snooze"), ("收工", "primary", "off_ok")],
         on_action,
         auto_close_ms=90000,
+        urgent=True,
     )
 
 
@@ -335,4 +396,5 @@ def show_off_again(mgr: ToastManager, on_action) -> None:
         [("这就走", "primary", "off_ok")],
         on_action,
         auto_close_ms=20000,
+        urgent=True,
     )
