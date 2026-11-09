@@ -53,6 +53,16 @@ MEAL_EARLY_STEP = 1.6      # 前段每张停这么久
 MEAL_LATE_STEP = 1.3       # 后段吃得更快
 MEAL_SWITCH = 120.0        # 午休开始 2 分钟后切换
 
+DRINK_FRAMES = (
+    "37_hold_cup",
+    "38_raise",
+    "39_sip",
+    "40_gulp",
+    "41_ahh",
+    "42_done",
+)
+DRINK_STEP = 0.34      # 每帧停留，六帧约 2 秒
+
 PAT_WINDOW = 2.2       # 摸头反应持续多久
 PAT_REACTIONS = ("26_joy", "27_blush", "28_love")
 
@@ -73,6 +83,7 @@ DURATION = {
     "wave": 2.6,
     "recover": 1.9,
     "stand_up": 0.42,
+    "drink": DRINK_STEP * len(DRINK_FRAMES),
     "lift": LIFT_DURATION,
     "pat": PAT_WINDOW,
 }
@@ -160,6 +171,11 @@ class FishState:
         if self.action == "pat":
             elapsed = self.t - self.action_start
             self.expr = "25_shock" if elapsed < 0.45 else self._pat_expr
+
+        if self.action == "drink":
+            elapsed = self.t - self.action_start
+            index = int(elapsed / DRINK_STEP)
+            self.expr = DRINK_FRAMES[min(len(DRINK_FRAMES) - 1, index)]
 
         if self.action == "lift":
             elapsed = self.t - self.action_start
@@ -330,6 +346,11 @@ class FishState:
             self.action_start = self.t
             self.action_duration = DURATION["wave"]
             self.expr = "05_wave"
+        elif kind == "drink":
+            self.action = "drink"
+            self.action_start = self.t
+            self.action_duration = DURATION["drink"]
+            self.expr = DRINK_FRAMES[0]
         elif kind == "off":
             self.action = "hop"
             self.action_start = self.t

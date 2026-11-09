@@ -282,8 +282,9 @@ class DeskMate:
         self.on_tick()
 
     def drink_done(self) -> None:
-        """点了水杯：记一杯，重新计时。"""
+        """点了「喝了」：记一杯、重新计时，并让她当场喝一杯。"""
         self.engine.drink_done()
+        self.card.fish.react("drink")
         self.on_tick()
 
     def reset_sit(self) -> None:

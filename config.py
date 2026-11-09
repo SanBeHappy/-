@@ -9,7 +9,7 @@ from pathlib import Path
 
 APP_NAME = "DeskMate"
 APP_TITLE = "工位伴侣"
-APP_VERSION = "1.0.10"
+APP_VERSION = "1.0.11"
 
 def _resolve_data_dir() -> Path:
     """默认存 %APPDATA%；如果 exe 旁边有 portable.txt，就存到 exe 同级的 DeskMate-data。
@@ -42,7 +42,7 @@ DEFAULTS: dict = {
     "lunch_end": "13:30",
     # 喝水
     "drink_enabled": True,
-    "drink_interval": 60,
+    "drink_interval": 30,
     "drink_cups": 0,
     "drink_cups_date": "",
     # 周报

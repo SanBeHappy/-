@@ -72,12 +72,19 @@ SLOTS: tuple[Slot, ...] = (
     Slot("34_feast", "猛吃", "meal", "午休满 2 分钟"),
     Slot("35_eat", "扒饭", "meal", "午休满 2 分钟 +1.3 秒"),
     Slot("36_full", "吃撑", "meal", "午休满 2 分钟 +2.6 秒"),
+    # 喝水
+    Slot("37_hold_cup", "端杯", "drink", "点「喝了」后第 1 帧"),
+    Slot("38_raise", "举杯", "drink", "第 2 帧"),
+    Slot("39_sip", "抿一口", "drink", "第 3 帧"),
+    Slot("40_gulp", "猛喝", "drink", "第 4 帧"),
+    Slot("41_ahh", "缓口气", "drink", "第 5 帧"),
+    Slot("42_done", "喝完", "drink", "第 6 帧"),
 )
 
 SLOT_BY_KEY = {s.key: s for s in SLOTS}
 SLOT_KEYS = tuple(SLOT_BY_KEY)
 
-GROUP_ORDER = ("idle", "action", "lift", "pat", "drag", "meal")
+GROUP_ORDER = ("idle", "action", "lift", "pat", "drag", "meal", "drink")
 GROUP_TITLES = {
     "idle": "待机",
     "action": "点击动作",
@@ -85,6 +92,7 @@ GROUP_TITLES = {
     "pat": "摸头",
     "drag": "拖动摔倒",
     "meal": "午休吃饭",
+    "drink": "喝水",
 }
 GROUP_HINTS = {
     "idle": "不互动时的样子",
@@ -93,6 +101,7 @@ GROUP_HINTS = {
     "pat": "鼠标移到角色身上",
     "drag": "拖动窗口时按速度切换",
     "meal": "午休时段的吃饭动画",
+    "drink": "点「喝了」后的六帧动画",
 }
 
 
