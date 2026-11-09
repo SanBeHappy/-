@@ -12,11 +12,11 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
-CUP_W, CUP_H = 48, 48
+CUP_W, CUP_H = 72, 50
 
-BODY_L, BODY_R = 4.0, 36.0     # 杯身左右
-BODY_T, BODY_B = 9.0, 44.0     # 杯身上下
-RADIUS = 7.0
+BODY_L, BODY_R = 2.0, 51.0     # 杯身左右
+BODY_T, BODY_B = 5.0, 45.0     # 杯身上下
+RADIUS = 9.0
 
 WATER = QColor("#378ADD")
 WATER_TOP = QColor("#85B7EB")
@@ -83,7 +83,7 @@ class DrinkCup(QWidget):
 
         handle = QPainterPath()
         handle.moveTo(BODY_R - 2, BODY_T + 7)
-        handle.cubicTo(BODY_R + 12, BODY_T + 7, BODY_R + 12, BODY_B - 10, BODY_R - 2, BODY_B - 12)
+        handle.cubicTo(BODY_R + 14, BODY_T + 7, BODY_R + 14, BODY_B - 10, BODY_R - 2, BODY_B - 12)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(line, 2.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawPath(handle)
@@ -118,7 +118,7 @@ class DrinkCup(QWidget):
                     radius = 1.6 - prog * 0.8
                     painter.setBrush(QColor(181, 212, 244, int(200 * (1 - prog))))
                     painter.drawEllipse(
-                        QPointF(BODY_L + 9 + i * 10, cy), radius, radius
+                        QPointF(BODY_L + 14 + i * 14, cy), radius, radius
                     )
             painter.restore()
 
@@ -128,7 +128,7 @@ class DrinkCup(QWidget):
 
         if self._cups > 0:
             font = QFont()
-            font.setPixelSize(15)
+            font.setPixelSize(18)
             font.setWeight(QFont.Weight.DemiBold)
             painter.setFont(font)
             box = QRectF(BODY_L, BODY_T, BODY_R - BODY_L, BODY_B - BODY_T)
@@ -143,4 +143,4 @@ class DrinkCup(QWidget):
             alpha = int(150 + 105 * abs(math.sin(self._phase * 0.6)))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(DOT.red(), DOT.green(), DOT.blue(), alpha))
-            painter.drawEllipse(QPointF(BODY_R + 4, BODY_T - 2), 2.1, 2.1)
+            painter.drawEllipse(QPointF(BODY_R + 6, BODY_T - 1), 2.4, 2.4)

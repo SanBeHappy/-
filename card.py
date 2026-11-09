@@ -39,7 +39,7 @@ WEEKDAY_CN = "一二三四五六日"
 
 # 窗口 = 上方鱼的活动区 + 下方卡片。鱼先画，卡片后画，自然把鱼的下半身挡住。
 CARD_TOP = 156
-CARD_HEIGHT = 158
+CARD_HEIGHT = 181
 FISH_CX = 152
 FISH_CY = 96
 
@@ -167,7 +167,6 @@ class MainCard(QWidget):
     request_settings = Signal()
     request_menu = Signal(QPoint)
     request_hide = Signal()
-    request_stand = Signal()
     request_drink = Signal()
     moved = Signal()
 
@@ -235,7 +234,7 @@ class MainCard(QWidget):
         head.addWidget(self.more_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         root.addLayout(head)
 
-        root.addSpacing(11)
+        root.addSpacing(8)
 
         self.caption = QLabel("距离下班")
         self.caption.setFont(ui_font(12))
@@ -248,53 +247,35 @@ class MainCard(QWidget):
         self.big.setFont(mono_font(30, QFont.Weight.DemiBold))
         self.big.setStyleSheet(f"color: {TEXT_HI}; padding: 0;")
         self.big.setFixedHeight(38)
-        big_row = QHBoxLayout()
-        big_row.setContentsMargins(0, 0, 0, 0)
-        big_row.setSpacing(0)
-        big_row.addWidget(self.big)
-        big_row.addStretch(1)
-        self.cup = DrinkCup(self)
-        self.cup.clicked.connect(self.request_drink.emit)
-        big_row.addWidget(self.cup, 0, Qt.AlignmentFlag.AlignBottom)
-        root.addLayout(big_row)
+        root.addWidget(self.big)
 
         root.addSpacing(8)
 
         self.day_bar = MiniBar(ORANGE, 4, self)
         root.addWidget(self.day_bar)
 
-        root.addSpacing(13)
+        root.addSpacing(7)
 
         sit_row = QHBoxLayout()
         sit_row.setContentsMargins(0, 0, 0, 0)
         sit_row.setSpacing(10)
-        self.sit_label = QLabel("久坐 0 分钟")
+        self.sit_label = QLabel("久坐")
         self.sit_label.setFont(ui_font(12))
-        self.sit_label.setMinimumWidth(120)
+        self.sit_label.setMinimumWidth(28)
         self.sit_label.setStyleSheet(f"color: {TEXT_MID}; padding: 0;")
         self.sit_bar = MiniBar(MINT, 3, self)
         self.sit_bar.setFixedWidth(96)
         self.sit_bar.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
-        self.stand_btn = QPushButton("起来了")
-        self.stand_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.stand_btn.setFixedSize(46, 18)
-        self.stand_btn.setFont(ui_font(10))
-        self.stand_btn.setToolTip("重置久坐计时")
-        self.stand_btn.setStyleSheet(
-            "QPushButton { background: rgba(255,255,255,16); color: #9BA2AD;"
-            " border: none; border-radius: 6px; padding: 0; font-size: 10px; }"
-            "QPushButton:hover { background: rgba(255,138,76,70); color: #FFF3EA; }"
-            "QPushButton:pressed { background: rgba(255,138,76,110); }"
-        )
-        self.stand_btn.clicked.connect(self.request_stand.emit)
+        self.cup = DrinkCup(self)
+        self.cup.clicked.connect(self.request_drink.emit)
 
-        sit_row.addWidget(self.sit_label)
-        sit_row.addStretch(1)
-        sit_row.addWidget(self.stand_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        sit_row.addSpacing(7)
+        sit_row.addWidget(self.sit_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        sit_row.addSpacing(8)
         sit_row.addWidget(self.sit_bar, 0, Qt.AlignmentFlag.AlignVCenter)
+        sit_row.addStretch(1)
+        sit_row.addWidget(self.cup, 0, Qt.AlignmentFlag.AlignVCenter)
         root.addLayout(sit_row)
 
     # ------------------------------------------------------------ 刷新
@@ -350,21 +331,21 @@ class MainCard(QWidget):
         # 久坐一行
         if not snap.sit_active:
             self.sit_label.setText(SIT_REASON_TEXT.get(snap.sit_reason, "计时暂停"))
+            self.sit_label.setMinimumWidth(28)
             self.sit_label.setStyleSheet(f"color: {TEXT_LOW}; padding: 0;")
-            self.stand_btn.setVisible(False)
             self.sit_bar.set_value(0.0)
+            self.sit_bar.setToolTip(SIT_REASON_TEXT.get(snap.sit_reason, "计时暂停"))
         else:
             minutes = int(snap.sit_minutes)
             target = max(5, snap.sit_target)
             ratio = snap.sit_minutes / target
+            self.sit_label.setText("久坐")
+            self.sit_label.setMinimumWidth(28)
+            self.sit_bar.setToolTip(f"已坐 {minutes} 分钟 · 目标 {target} 分钟")
             if ratio >= 0.8:
-                self.sit_label.setText(f"久坐 {minutes} 分 · 该起了")
-                self.stand_btn.setVisible(True)
                 self.sit_label.setStyleSheet(f"color: {ORANGE}; padding: 0;")
                 self.sit_bar.set_color(ORANGE)
             else:
-                self.sit_label.setText(f"久坐 {minutes} 分钟")
-                self.stand_btn.setVisible(True)
                 self.sit_label.setStyleSheet(f"color: {TEXT_MID}; padding: 0;")
                 self.sit_bar.set_color(MINT)
             self.sit_bar.set_value(ratio)

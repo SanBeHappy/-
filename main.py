@@ -109,7 +109,6 @@ class DeskMate:
         self.card.request_settings.connect(self.open_settings)
         self.card.request_menu.connect(self.popup_menu)
         self.card.request_hide.connect(self.toggle_card)
-        self.card.request_stand.connect(self.reset_sit)
         self.card.request_drink.connect(self.drink_done)
 
         self.tray = self._build_tray()
@@ -383,6 +382,8 @@ class DeskMate:
     def on_toast_action(self, key: str) -> None:
         if key == "sit_stand":
             self.engine.stand_up()
+        elif key == "sit_ok":
+            pass
         elif key == "sit_snooze":
             self.engine.snooze_sit()
         elif key == "drink_ok":

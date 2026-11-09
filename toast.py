@@ -247,7 +247,7 @@ def show_sit(mgr: ToastManager, minutes: int, hard: bool, on_action) -> None:
         MINT,
         title,
         f"已经连续坐了 {minutes} 分钟。{body}",
-        [("5 分钟后", "ghost", "sit_snooze"), ("起身了", "primary", "sit_stand")],
+        [("知道了", "ghost", "sit_ok"), ("起来了", "primary", "sit_stand")],
         on_action,
         auto_close_ms=20000,
     )
