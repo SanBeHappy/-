@@ -146,6 +146,8 @@ class DeskMate:
         menu.addSeparator()
         self.action_stand = menu.addAction("我起身了 · 重新计时")
         self.action_stand.triggered.connect(self.engine.stand_up)
+        self.action_drink = menu.addAction("喝水重置")
+        self.action_drink.triggered.connect(self.reset_drink)
         self.action_pause = menu.addAction("暂停久坐提醒 30 分钟")
         self.action_pause.triggered.connect(self._toggle_pause)
         menu.addSeparator()
@@ -171,6 +173,15 @@ class DeskMate:
         self.action_pause.setText(
             "恢复久坐提醒" if paused else "暂停久坐提醒 30 分钟"
         )
+        drink_on = bool(self.cfg["drink_enabled"])
+        self.action_drink.setEnabled(drink_on)
+        if drink_on:
+            left = self.engine.snapshot.drink_left
+            self.action_drink.setText(
+                f"喝水重置（还剩 {left} 分钟）" if left > 0 else "喝水重置"
+            )
+        else:
+            self.action_drink.setText("喝水重置（提醒已关闭）")
         self._rebuild_theme_menu()
 
     def _rebuild_theme_menu(self) -> None:
@@ -293,6 +304,11 @@ class DeskMate:
         """点了「喝了」：记一杯、重新计时，并让她当场喝一杯。"""
         self.engine.drink_done()
         self.card.fish.react("drink")
+        self.on_tick()
+
+    def reset_drink(self) -> None:
+        """托盘 / 卡片菜单：把喝水计时归零（不记杯数）。"""
+        self.engine.reset_drink()
         self.on_tick()
 
     def reset_sit(self) -> None:

@@ -104,6 +104,12 @@ class Engine:
         self.cfg["report_done_date"] = datetime.now().date().isoformat()
         self.cfg.save()
 
+    def reset_drink(self) -> None:
+        """手动把喝水计时归零，不记杯数（菜单里的「喝水重置」用）。"""
+        self.drink_start = datetime.now()
+        self.drink_alerts = 0
+        self.drink_last_alert = None
+
     def snooze_drink(self, minutes: int = 10) -> None:
         """「10 分钟后」：用户有响应，本轮计数清零，到点再催一次。"""
         self.drink_last_alert = datetime.now() - timedelta(
