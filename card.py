@@ -22,6 +22,8 @@ import char_theme
 from cup import DrinkCup
 from fish import IDLE_EXPR, OFF_IDLE_EXPR, FishState
 from weather import WeatherBadge, WeatherService
+UPDATE_RED = "#FF5A5F"
+
 from theme import (
     BASE_QSS,
     CARD_BG,
@@ -126,6 +128,42 @@ class MiniBar(QWidget):
             )
 
 
+class UpdateBadge(QWidget):
+    """日期和天气之间的小提示：红色的「更新」+ NEW 标签，点一下去更新。"""
+
+    clicked = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("发现新版本，点这里查看")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+
+        label = QLabel("更新")
+        label.setFont(ui_font(11, QFont.Weight.DemiBold))
+        label.setStyleSheet(f"color: {UPDATE_RED}; padding: 0;")
+
+        self.tag = QLabel("NEW")
+        self.tag.setFont(ui_font(8, QFont.Weight.Bold))
+        self.tag.setStyleSheet(
+            "color: #FFFFFF; background: %s; border-radius: 5px;"
+            " padding: 1px 4px; letter-spacing: 0.5px;" % UPDATE_RED
+        )
+
+        layout.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.tag, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.hide()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        event.ignore()
+
+
 class DotsButton(QWidget):
     """右上角「···」按钮，手绘，避免字体缺字。"""
 
@@ -167,6 +205,7 @@ class MainCard(QWidget):
     request_settings = Signal()
     request_menu = Signal(QPoint)
     request_hide = Signal()
+    request_update = Signal()
     request_drink = Signal()
     moved = Signal()
 
@@ -232,6 +271,10 @@ class MainCard(QWidget):
         head.addSpacing(1)
         head.addWidget(self.date_label, 0, Qt.AlignmentFlag.AlignVCenter)
         head.addStretch(1)
+        self.update_badge = UpdateBadge(self)
+        self.update_badge.clicked.connect(self.request_update.emit)
+        head.addWidget(self.update_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        head.addSpacing(6)
         self.weather = WeatherBadge(self)
         head.addWidget(self.weather, 0, Qt.AlignmentFlag.AlignVCenter)
         head.addSpacing(8)
@@ -456,6 +499,15 @@ class MainCard(QWidget):
         self.update()
 
     # ------------------------------------------------------------ 交互
+
+    def set_update_available(self, available: bool) -> None:
+        """有新版本时在日期和天气之间亮起红色提示。"""
+        if not hasattr(self, "update_badge"):
+            return
+        if available:
+            self.update_badge.show()
+        else:
+            self.update_badge.hide()
 
     def _emit_menu(self) -> None:
         self.request_menu.emit(self.more_btn.mapToGlobal(QPoint(0, self.more_btn.height())))

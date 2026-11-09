@@ -105,12 +105,20 @@ class DeskMate:
         self.theme_manager: ThemeManagerWindow | None = None
         self.theme_editor: ThemeEditorWindow | None = None
         self.updater: update.UpdateChecker | None = None
+        self._silent_check = False
+        # 每 30 分钟悄悄查一次新版本，有更新就在卡片上亮红字
+        self.update_timer = QTimer(self.app)
+        self.update_timer.setInterval(30 * 60 * 1000)
+        self.update_timer.timeout.connect(lambda: self.check_update(silent=True))
+        self.update_timer.start()
+        QTimer.singleShot(20000, lambda: self.check_update(silent=True))
 
         self.card = MainCard(self.cfg, self.engine)
         self.card.request_settings.connect(self.open_settings)
         self.card.request_menu.connect(self.popup_menu)
         self.card.request_hide.connect(self.toggle_card)
         self.card.request_drink.connect(self.drink_done)
+        self.card.request_update.connect(lambda: self.check_update())
 
         self.tray = self._build_tray()
 
@@ -292,26 +300,39 @@ class DeskMate:
         self.engine.stand_up()
         self.on_tick()
 
-    def check_update(self) -> None:
+    def check_update(self, silent: bool = False) -> None:
+        """silent=True 时只在卡片上亮提示，不弹窗、不打扰（后台轮询用）。"""
         if self.updater is None:
             self.updater = update.UpdateChecker()   # DeskMate 不是 QObject，不能当 parent
             self.updater.finished.connect(self.on_update_result)
+        if getattr(self.updater, "_busy", False):
+            return
+        self._silent_check = silent
         self.updater.check()
 
     def on_update_result(self, remote: str, error: str, notes: list) -> None:
+        silent = self._silent_check
+        self._silent_check = False
+        newer = bool(remote) and not error and update.is_newer(remote, APP_VERSION)
+        self.card.set_update_available(newer)
+
         if error:
+            if silent:
+                return
             self.toasts.show(
                 ORANGE, "检查更新失败", error,
                 [("知道了", "primary", "noop")], self.on_toast_action,
                 auto_close_ms=12000,
             )
             return
-        if update.is_newer(remote, APP_VERSION):
+        if newer:
+            if silent:
+                return          # 后台查到的，只亮红字，不打断
             # 弹框自己负责下载和应用更新，这里只管把窗口弹出来
             dialog = UpdateDialog(remote, APP_VERSION, notes, None)
             dialog.setWindowIcon(app_icon())
             dialog.exec()
-        else:
+        elif not silent:
             self.toasts.show(
                 MINT,
                 "已经是最新版本",
