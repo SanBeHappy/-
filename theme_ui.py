@@ -724,6 +724,8 @@ class UpdateDialog(DarkDialog):
         self._stamp = 0.0
         self._waited = 0
         self._watch: QTimer | None = None
+        self.before_apply = None      # 替换前调用（让出单实例锁）
+        self.after_fail = None        # 回滚后调用（把锁拿回来）
 
     def _start_download(self) -> None:
         if not update.can_self_update():
@@ -753,9 +755,19 @@ class UpdateDialog(DarkDialog):
             self._retry(error)
             return
 
+        if callable(self.before_apply):
+            try:
+                self.before_apply()
+            except Exception:
+                pass
         stamp = time.time()
         ok, msg, proc = update.apply_update(Path(path))
         if not ok:
+            if callable(self.after_fail):
+                try:
+                    self.after_fail()      # 替换没成功，把单实例锁拿回来
+                except Exception:
+                    pass
             self._retry(msg)
             return
 
@@ -798,6 +810,11 @@ class UpdateDialog(DarkDialog):
         except Exception:
             pass
         restored = update.rollback()
+        if callable(self.after_fail):
+            try:
+                self.after_fail()
+            except Exception:
+                pass
         if restored:
             self._retry(f"{reason}，已还原到上一版，稍后再试")
         else:

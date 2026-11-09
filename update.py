@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import re
@@ -140,6 +141,7 @@ class UpdateChecker(QObject):
 
 
 SUMS_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/SHA256SUMS"
+API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 
 
 def _looks_like_exe(path: Path) -> bool:
@@ -274,23 +276,59 @@ class UpdateDownloader(QObject):
 
     def _verify(self) -> None:
         assert self._target is not None
-        if not self._expect:
-            # 没有校验文件：宁可放过，给出提示后仍允许更新
-            self.finished.emit(str(self._target), "")
-            return
         try:
             actual = sha256_of(self._target)
         except OSError as exc:
             self.finished.emit("", f"读取下载文件失败：{exc}")
             return
-        if actual != self._expect:
+
+        if self._expect and actual == self._expect:
+            self.finished.emit(str(self._target), "")
+            return
+
+        # SHA256SUMS 走的是 raw CDN，发版后可能几分钟还是旧内容，
+        # 这时改问 GitHub API 上附件的摘要，避免把好包判成坏的
+        self._verify_by_api(actual)
+
+    def _verify_by_api(self, actual: str) -> None:
+        request = QNetworkRequest(QUrl(f"{API_URL}?t={int(time.time())}"))
+        request.setHeader(
+            QNetworkRequest.KnownHeaders.UserAgentHeader,
+            "Mozilla/5.0 DeskMate-Update",
+        )
+        request.setRawHeader(b"Accept", b"application/vnd.github+json")
+        request.setTransferTimeout(15000)
+        reply = self._nam.get(request)
+
+        def done(r=reply) -> None:
+            expect = ""
             try:
-                self._target.unlink()
+                if r.error() == QNetworkReply.NetworkError.NoError:
+                    data = json.loads(bytes(r.readAll()).decode("utf-8", "ignore"))
+                    for asset in data.get("assets") or []:
+                        if asset.get("name") == "DeskMate.exe":
+                            expect = (asset.get("digest") or "").replace("sha256:", "").lower()
+                            break
+            except Exception:
+                expect = ""
+            finally:
+                r.deleteLater()
+
+            if expect and expect == actual:
+                self.finished.emit(str(self._target), "")
+                return
+            if not self._expect and not expect:
+                # 两条路都问不到哈希，退回只看文件头，不卡住更新
+                self.finished.emit(str(self._target), "")
+                return
+            try:
+                if self._target is not None:
+                    self._target.unlink()
             except OSError:
                 pass
             self.finished.emit("", "下载的文件校验不通过，已放弃本次更新")
-            return
-        self.finished.emit(str(self._target), "")
+
+        reply.finished.connect(done)
 
 
 RESTART_FLAG = "--restarted"

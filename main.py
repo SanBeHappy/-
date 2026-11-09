@@ -307,6 +307,27 @@ class DeskMate:
         self.card.fish.react("drink")
         self.on_tick()
 
+    def release_instance(self) -> None:
+        """更新前先让出单实例锁，否则新进程会以为「已经有实例在跑」而直接退出。"""
+        server = getattr(self.app, "_deskmate_server", None)
+        if server is None:
+            return
+        try:
+            server.close()
+        except Exception:
+            pass
+        try:
+            QLocalServer.removeServer(SERVER_NAME)
+        except Exception:
+            pass
+        self.app._deskmate_server = None
+
+    def restore_instance(self) -> None:
+        """更新失败、旧版本还在跑时，把锁重新拿回来。"""
+        if getattr(self.app, "_deskmate_server", None) is not None:
+            return
+        self.app._deskmate_server = serve_single_instance(self.show_card)
+
     def _toast_anchor(self):
         """提醒窗贴在卡片旁边，别压住倒计时。"""
         if self.card is None or not self.card.isVisible():
@@ -354,6 +375,8 @@ class DeskMate:
             # 弹框自己负责下载和应用更新，这里只管把窗口弹出来
             dialog = UpdateDialog(remote, APP_VERSION, notes, None)
             dialog.setWindowIcon(app_icon())
+            dialog.before_apply = self.release_instance
+            dialog.after_fail = self.restore_instance
             dialog.exec()
         elif not silent:
             self.toasts.show(
@@ -478,20 +501,15 @@ def already_running() -> bool:
 def wait_previous_instance() -> bool:
     """返回 True 表示不该启动（已有实例在跑）。
 
-    自动更新后重启时，旧进程可能还没退干净。这时如果直接判定「重复启动」，
-    新版本会立刻退出，界面上看起来就是更新完什么都没了 —— 所以带
-    --restarted 时多等一会儿。
+    更新后重启带 --restarted：直接接管，不去等旧进程让出锁。
+    以前是「等它退出，最多 10 秒」，但旧进程正等着新进程写启动标记，
+    两边互等，最后一起超时 —— 表现就是「更新到 100% 提示失败」。
+    serve_single_instance() 里本来就会 removeServer 再 listen，
+    直接接管不会有两个实例长期并存（旧进程看到标记就退）。
     """
-    if not already_running():
+    if update.RESTART_FLAG in sys.argv:
         return False
-    if update.RESTART_FLAG not in sys.argv:
-        return True
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        time.sleep(0.3)
-        if not already_running():
-            return False
-    return True
+    return already_running()
 
 
 def serve_single_instance(on_ping) -> QLocalServer:
