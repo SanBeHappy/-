@@ -84,12 +84,15 @@ build.bat                        # 打包成 dist\DeskMate.exe
 
 1. 改三处版本号：`config.py` 的 `APP_VERSION`、`version_info.txt`、根目录 `VERSION`
 2. 在 `CHANGELOG.md` 顶部加一段这次的更新内容
-3. `build.bat` 打包
+3. `build.bat` 打包（会先关掉正在运行的实例，打完自动复核版本并生成 `SHA256SUMS`）
 4. 在 GitHub 建一个 release（tag 用 `v版本号`），**把 `dist/DeskMate.exe` 作为附件传上去**，文件名必须是 `DeskMate.exe`
-5. 提交并推送
+5. 提交并推送（`SHA256SUMS` 要一起提交）
 
 检查更新的下载地址是 `releases/latest/download/DeskMate.exe`，所以只要最新那个 release 里有这个附件就能用。
 第 4 步忘了，用户会看到新版本号却下载不到包。
+
+客户端下载完会拿 `SHA256SUMS` 校验，对不上就放弃更新 —— 所以 3 和 5 的顺序不能颠倒：
+**先打包生成 SHA256SUMS，再提交，再传 release**，保证三者的哈希是同一份文件。
 
 ## 关于
 
