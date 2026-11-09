@@ -290,11 +290,13 @@ class MainCard(QWidget):
         """杯子纵向从「距离下班」跨到久坐进度条底部。"""
         if not hasattr(self, "cup"):
             return
-        top = self.caption.mapTo(self, QPoint(0, 0)).y()
-        bottom = self.sit_bar.mapTo(self, QPoint(0, 0)).y() + self.sit_bar.height()
+        zone_top = self.caption.mapTo(self, QPoint(0, 0)).y()
+        zone_bottom = self.sit_bar.mapTo(self, QPoint(0, 0)).y() + self.sit_bar.height()
         width = 72
-        left = self.width() - 14 - width
-        self.cup.setGeometry(left, top, width, max(40, bottom - top))
+        height = int(width * 260 / 302)          # 和素材同比例，避免留白不均
+        top = zone_top + max(0, (zone_bottom - zone_top - height) // 2)
+        left = self.width() - 16 - width
+        self.cup.setGeometry(left, top, width, height)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
