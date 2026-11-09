@@ -85,10 +85,11 @@ build.bat                        # 打包成 dist\DeskMate.exe
 1. 改三处版本号：`config.py` 的 `APP_VERSION`、`version_info.txt`、根目录 `VERSION`
 2. 在 `CHANGELOG.md` 顶部加一段这次的更新内容
 3. `build.bat` 打包
-4. **把 `dist/DeskMate.exe` 复制到 `release/DeskMate.exe`**（检查更新从这里下载）
+4. 在 GitHub 建一个 release（tag 用 `v版本号`），**把 `dist/DeskMate.exe` 作为附件传上去**，文件名必须是 `DeskMate.exe`
 5. 提交并推送
 
-第 4 步容易忘 —— 忘了的话，用户会看到新版本号、点更新却下载到旧包。
+检查更新的下载地址是 `releases/latest/download/DeskMate.exe`，所以只要最新那个 release 里有这个附件就能用。
+第 4 步忘了，用户会看到新版本号却下载不到包。
 
 ## 关于
 

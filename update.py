@@ -22,7 +22,8 @@ REPO = "SanBeHappy/-"
 BRANCH = "main"
 VERSION_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/VERSION"
 CHANGELOG_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/CHANGELOG.md"
-ASSET_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/release/DeskMate.exe"
+# 走 GitHub Releases：latest 会自动指向最新一个正式版
+ASSET_URL = f"https://github.com/{REPO}/releases/latest/download/DeskMate.exe"
 
 UPDATE_DIR = Path(tempfile.gettempdir()) / "DeskMate-update"
 PAGE_URL = f"https://github.com/{REPO}"
