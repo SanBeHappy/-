@@ -346,7 +346,8 @@ class MainCard(QWidget):
             else:
                 self.dot.set_state(MINT, 0.72 + 0.28 * pulse)
 
-        self.cup.set_state(snap.drink_state, snap.drink_cups, snap.drink_left)
+        self.cup.set_state(snap.drink_ratio, snap.drink_cups, snap.drink_left,
+                           snap.drink_state == "full")
         self._place_cup()
 
         # 久坐一行

@@ -45,6 +45,7 @@ class Snapshot:
     drink_state: str = "empty"   # empty | half | full
     drink_cups: int = 0          # 今天喝了几杯
     drink_left: int = 0          # 距下次喝水还有几分钟
+    drink_ratio: float = 0.0     # 0~1，用来挑杯子素材
 
 
 @dataclass
@@ -258,6 +259,7 @@ class Engine:
         # ---- 喝水 ----
         drink_state = "empty"
         drink_left = 0
+        drink_ratio = 0.0
         cups = int(self.cfg["drink_cups"] or 0)
         if str(self.cfg["drink_cups_date"] or "") != now.date().isoformat():
             cups = 0
@@ -266,6 +268,7 @@ class Engine:
             elapsed = max(0.0, (now - self.drink_start).total_seconds() / 60.0)
             ratio = elapsed / interval
             drink_left = max(0, int(round(interval - elapsed)))
+            drink_ratio = min(1.0, max(0.0, ratio))
             if ratio >= 1.0:
                 drink_state = "full"
                 due = (
@@ -298,6 +301,7 @@ class Engine:
             drink_state=drink_state,
             drink_cups=cups,
             drink_left=drink_left,
+            drink_ratio=drink_ratio,
         )
         return events
 
