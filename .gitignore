@@ -1,0 +1,18 @@
+# 虚拟环境
+.venv/
+
+# 打包产物
+build/
+dist/
+*.spec
+
+# 原始素材（体积大，成品已放在 assets/）
+refs/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 本地临时文件
+_*.png
+_*.jpg
