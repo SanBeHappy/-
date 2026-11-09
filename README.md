@@ -82,11 +82,13 @@ build.bat                        # 打包成 dist\DeskMate.exe
 
 ### 发版
 
-1. 改 `config.py` 的 `APP_VERSION`
-2. 改 `version_info.txt` 的版本号（exe 文件属性用）
-3. 改根目录 `VERSION`（检查更新读这个）
-4. `build.bat` 打包
+1. 改三处版本号：`config.py` 的 `APP_VERSION`、`version_info.txt`、根目录 `VERSION`
+2. 在 `CHANGELOG.md` 顶部加一段这次的更新内容
+3. `build.bat` 打包
+4. **把 `dist/DeskMate.exe` 复制到 `release/DeskMate.exe`**（检查更新从这里下载）
 5. 提交并推送
+
+第 4 步容易忘 —— 忘了的话，用户会看到新版本号、点更新却下载到旧包。
 
 ## 关于
 
