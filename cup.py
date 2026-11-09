@@ -87,6 +87,13 @@ class DrinkCup(QWidget):
                 break
         return _pixmap(FRAMES[index])
 
+    def frame_aspect(self) -> float:
+        """高 / 宽。外部按这个比例摆位置，画的时候就不会被拉伸或留空。"""
+        src = self._frame()
+        if src.isNull() or src.width() == 0:
+            return 0.887
+        return src.height() / src.width()
+
     def paintEvent(self, event) -> None:  # noqa: N802
         src = self._frame()
         if src.isNull():

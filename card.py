@@ -287,14 +287,19 @@ class MainCard(QWidget):
     # ------------------------------------------------------------ 刷新
 
     def _place_cup(self) -> None:
-        """杯子纵向从「距离下班」跨到久坐进度条底部。"""
+        """杯子放在「距离下班」到久坐进度条之间的右侧，按素材比例竖着居中。"""
         if not hasattr(self, "cup"):
             return
         zone_top = self.caption.mapTo(self, QPoint(0, 0)).y()
         zone_bottom = self.sit_bar.mapTo(self, QPoint(0, 0)).y() + self.sit_bar.height()
         width = 72
-        height = int(width * 260 / 302)          # 和素材同比例，避免留白不均
-        top = zone_top + max(0, (zone_bottom - zone_top - height) // 2)
+        height = max(40, int(round(width * self.cup.frame_aspect())))
+        # 区域装不下就缩，别让杯子戳出卡片
+        room = max(40, zone_bottom - zone_top)
+        if height > room:
+            height = room
+            width = max(40, int(round(height / self.cup.frame_aspect())))
+        top = zone_top + max(0, (room - height) // 2)
         left = self.width() - 16 - width
         self.cup.setGeometry(left, top, width, height)
 
