@@ -6,8 +6,13 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
+import tempfile
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -17,6 +22,9 @@ REPO = "SanBeHappy/-"
 BRANCH = "main"
 VERSION_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/VERSION"
 CHANGELOG_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/CHANGELOG.md"
+ASSET_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/release/DeskMate.exe"
+
+UPDATE_DIR = Path(tempfile.gettempdir()) / "DeskMate-update"
 PAGE_URL = f"https://github.com/{REPO}"
 
 _NUM = re.compile(r"\d+")
@@ -123,3 +131,123 @@ class UpdateChecker(QObject):
             self.finished.emit(version, "", notes)
 
         reply.finished.connect(done)
+
+
+# ---------------------------------------------------------------- 下载与替换
+
+
+class UpdateDownloader(QObject):
+    """把新版本 exe 下到临时目录，带进度回调。"""
+
+    progress = Signal(int, int)      # 已下载字节, 总字节
+    finished = Signal(str, str)      # 文件路径, 错误
+
+    MIN_SIZE = 5 * 1024 * 1024       # 小于 5MB 一定是坏包
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._nam = QNetworkAccessManager(self)
+        self._file = None
+        self._target: Path | None = None
+        self._part: Path | None = None
+
+    def start(self) -> None:
+        UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+        self._target = UPDATE_DIR / "DeskMate.exe"
+        self._part = UPDATE_DIR / "DeskMate.part"
+        try:
+            self._file = open(self._part, "wb")
+        except OSError as exc:
+            self.finished.emit("", f"写不了临时目录：{exc}")
+            return
+
+        request = QNetworkRequest(QUrl(f"{ASSET_URL}?t={int(time.time())}"))
+        request.setHeader(
+            QNetworkRequest.KnownHeaders.UserAgentHeader,
+            "Mozilla/5.0 DeskMate-Update",
+        )
+        request.setTransferTimeout(300000)
+        reply = self._nam.get(request)
+        reply.downloadProgress.connect(self.progress.emit)
+        reply.readyRead.connect(lambda r=reply: self._on_chunk(r))
+        reply.finished.connect(lambda r=reply: self._on_done(r))
+
+    def _on_chunk(self, reply: QNetworkReply) -> None:
+        if self._file is None:
+            return
+        data = bytes(reply.readAll())
+        if data:
+            try:
+                self._file.write(data)
+            except OSError:
+                pass
+
+    def _on_done(self, reply: QNetworkReply) -> None:
+        error = ""
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            error = "下载失败，检查网络后再试"
+        try:
+            if self._file is not None:
+                self._file.close()
+                self._file = None
+        except OSError:
+            pass
+
+        if not error and self._part is not None and self._target is not None:
+            size = self._part.stat().st_size if self._part.exists() else 0
+            if size < self.MIN_SIZE:
+                error = "下载到的文件不完整"
+            else:
+                try:
+                    os.replace(self._part, self._target)
+                except OSError as exc:
+                    error = f"保存失败：{exc}"
+        reply.deleteLater()
+
+        if error:
+            self.finished.emit("", error)
+        else:
+            self.finished.emit(str(self._target), "")
+
+
+def can_self_update() -> bool:
+    """只有打包后的 exe 才能替换自己。"""
+    return bool(getattr(sys, "frozen", False))
+
+
+def apply_update(new_exe: Path) -> tuple[bool, str]:
+    """用批处理在程序退出后替换 exe 并重启。返回是否已交给脚本。"""
+    target = Path(sys.executable).resolve() if getattr(sys, "frozen", False) else None
+    if target is None:
+        return False, "开发模式下不支持自动更新"
+    if not Path(new_exe).exists():
+        return False, "找不到下载好的文件"
+
+    script = UPDATE_DIR / "apply.bat"
+    backup = target.with_suffix(".old.exe")
+    try:
+        script.write_text(
+            "@echo off\r\n"
+            "chcp 65001 >nul\r\n"
+            "timeout /t 2 /nobreak >nul\r\n"
+            "taskkill /f /im \"DeskMate.exe\" >nul 2>&1\r\n"
+            "timeout /t 1 /nobreak >nul\r\n"
+            f'if exist "{backup}" del /f /q "{backup}" >nul 2>&1\r\n'
+            f'copy /y "{target}" "{backup}" >nul 2>&1\r\n'
+            f'move /y "{new_exe}" "{target}" >nul 2>&1\r\n'
+            f'start "" "{target}"\r\n'
+            'del /f /q "%~f0" >nul 2>&1\r\n',
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        return False, f"写更新脚本失败：{exc}"
+
+    try:
+        subprocess.Popen(
+            ["cmd", "/c", str(script)],
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            close_fds=True,
+        )
+    except OSError as exc:
+        return False, f"启动更新脚本失败：{exc}"
+    return True, ""

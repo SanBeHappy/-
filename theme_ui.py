@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 import char_theme
 import image_proc
+import update
 from image_proc import ImageImportError
 from settings import Check, FIELD_QSS
 from theme import (
@@ -699,18 +700,68 @@ class UpdateDialog(DarkDialog):
         else:
             body.addWidget(self._hint("这次没写更新说明，去仓库看看提交记录。"))
 
-        body.addSpacing(18)
+        self.status = QLabel("")
+        self.status.setFont(ui_font(11))
+        self.status.setStyleSheet(f"color: {TEXT_LOW}; padding: 0;")
+        body.addWidget(self.status)
+        body.addSpacing(10)
+
         footer = QHBoxLayout()
-        later = self._ghost("以后再说", 92)
-        later.clicked.connect(self.reject)
-        go = self._primary("去下载")
-        go.clicked.connect(self.accept)
         footer.addStretch(1)
-        footer.addWidget(later)
+        self.later = self._ghost("以后再说", 92)
+        self.later.clicked.connect(self.reject)
+        self.go = self._primary("立即更新")
+        self.go.clicked.connect(self._start_download)
+        footer.addWidget(self.later)
         footer.addSpacing(8)
-        footer.addWidget(go)
+        footer.addWidget(self.go)
         body.addLayout(footer)
         self.adjustSize()
+
+        self._downloader = None
+
+    def _start_download(self) -> None:
+        if not update.can_self_update():
+            self.status.setText("开发模式下不支持自动更新")
+            self.status.setStyleSheet(f"color: {ORANGE}; padding: 0;")
+            return
+        self.go.setEnabled(False)
+        self.go.setText("下载中")
+        self.later.setEnabled(False)
+        self.status.setText("正在连接…")
+        self.status.setStyleSheet(f"color: {TEXT_MID}; padding: 0;")
+
+        self._downloader = update.UpdateDownloader()
+        self._downloader.progress.connect(self._on_progress)
+        self._downloader.finished.connect(self._on_downloaded)
+        self._downloader.start()
+
+    def _on_progress(self, done: int, total: int) -> None:
+        if total > 0:
+            pct = min(100, int(done * 100 / total))
+            self.status.setText(f"正在下载 {pct}%  ·  {done / 1048576:.1f} / {total / 1048576:.1f} MB")
+        else:
+            self.status.setText(f"正在下载  ·  {done / 1048576:.1f} MB")
+
+    def _on_downloaded(self, path: str, error: str) -> None:
+        if error:
+            self.status.setText(error)
+            self.status.setStyleSheet(f"color: {ORANGE}; padding: 0;")
+            self.go.setEnabled(True)
+            self.go.setText("重试")
+            self.later.setEnabled(True)
+            return
+        ok, msg = update.apply_update(__import__("pathlib").Path(path))
+        if ok:
+            self.status.setText("更新完成，程序即将重启…")
+            self.status.setStyleSheet(f"color: {MINT}; padding: 0;")
+            QTimer.singleShot(900, QApplication.instance().quit)
+        else:
+            self.status.setText(msg)
+            self.status.setStyleSheet(f"color: {ORANGE}; padding: 0;")
+            self.go.setEnabled(True)
+            self.go.setText("重试")
+            self.later.setEnabled(True)
 
 
 # ---------------------------------------------------------------- 简易确认框

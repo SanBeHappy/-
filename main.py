@@ -305,10 +305,10 @@ class DeskMate:
             )
             return
         if update.is_newer(remote, APP_VERSION):
+            # 弹框自己负责下载和应用更新，这里只管把窗口弹出来
             dialog = UpdateDialog(remote, APP_VERSION, notes, None)
             dialog.setWindowIcon(app_icon())
-            if dialog.exec() == dialog.DialogCode.Accepted:
-                update.open_repo()
+            dialog.exec()
         else:
             self.toasts.show(
                 MINT,
