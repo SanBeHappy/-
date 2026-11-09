@@ -292,7 +292,7 @@ class DeskMate:
 
     def check_update(self) -> None:
         if self.updater is None:
-            self.updater = update.UpdateChecker(self)
+            self.updater = update.UpdateChecker()   # DeskMate 不是 QObject，不能当 parent
             self.updater.finished.connect(self.on_update_result)
         self.updater.check()
 
