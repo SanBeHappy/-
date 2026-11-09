@@ -143,7 +143,7 @@ class DeskMate:
         menu.addSeparator()
         self.menu_theme = menu.addMenu("角色主题")
         menu.addSeparator()
-        self.action_update = menu.addAction("检查更新…")
+        self.action_update = menu.addAction(f"检查更新(V{APP_VERSION})")
         self.action_update.triggered.connect(self.check_update)
         action_settings = menu.addAction("设置…")
         action_settings.triggered.connect(self.open_settings)
