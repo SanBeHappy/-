@@ -1,7 +1,7 @@
-"""喝水杯子：卡片右下角的一个小马克杯，杯身中间显示今天第几杯。
+"""喝水杯子：卡片右侧一个竖高的马克杯，跨越「距离下班」到久坐进度条这一段。
 
-三种状态由引擎给：empty / half / full。
-满水时水面轻轻浮动、两颗气泡往上冒，杯口右侧有橙色小点脉冲。
+尺寸由卡片在运行时决定，所以绘制全部按控件宽高的比例来算。
+三种状态：empty / half / full；满水时水面浮动、气泡上浮、杯口橙点脉冲。
 """
 
 from __future__ import annotations
@@ -11,12 +11,6 @@ import math
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
-
-CUP_W, CUP_H = 72, 50
-
-BODY_L, BODY_R = 2.0, 51.0     # 杯身左右
-BODY_T, BODY_B = 5.0, 45.0     # 杯身上下
-RADIUS = 9.0
 
 WATER = QColor("#378ADD")
 WATER_TOP = QColor("#85B7EB")
@@ -32,8 +26,7 @@ class DrinkCup(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setFixedSize(CUP_W, CUP_H)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._state = "empty"
         self._cups = 0
         self._left = 60
@@ -51,14 +44,11 @@ class DrinkCup(QWidget):
         if state == "full":
             if not self._timer.isActive():
                 self._timer.start()
-            self.setToolTip("该喝水了，点我记一杯")
+            self.setToolTip("该喝水了")
         else:
             self._timer.stop()
             self._phase = 0.0
-            if state == "half":
-                self.setToolTip(f"还有 {left} 分钟该喝水了")
-            else:
-                self.setToolTip(f"距下次喝水还有 {left} 分钟")
+            self.setToolTip(f"还有 {left} 分钟该喝水了" if state == "half" else "")
         if changed:
             self.update()
 
@@ -66,30 +56,42 @@ class DrinkCup(QWidget):
         self._phase += 0.09
         self.update()
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit()
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
     def paintEvent(self, event) -> None:  # noqa: N802
+        w, h = float(self.width()), float(self.height())
+        if w < 12 or h < 12:
+            return
+
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
+        body_l = w * 0.04
+        body_r = w * 0.78
+        body_t = h * 0.05
+        body_b = h * 0.97
+        radius = min(body_r - body_l, body_b - body_t) * 0.26
+
         full = self._state == "full"
         line = LINE_READY if self._state != "empty" else LINE_IDLE
-        sway = math.sin(self._phase) * 1.2 if full else 0.0
+        sway = math.sin(self._phase) * 1.4 if full else 0.0
 
         handle = QPainterPath()
-        handle.moveTo(BODY_R - 2, BODY_T + 7)
-        handle.cubicTo(BODY_R + 14, BODY_T + 7, BODY_R + 14, BODY_B - 10, BODY_R - 2, BODY_B - 12)
+        hx = body_r - 2
+        handle.moveTo(hx, body_t + (body_b - body_t) * 0.18)
+        handle.cubicTo(
+            w * 0.99, body_t + (body_b - body_t) * 0.20,
+            w * 0.99, body_b - (body_b - body_t) * 0.24,
+            hx, body_b - (body_b - body_t) * 0.26,
+        )
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(line, 2.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setPen(
+            QPen(line, max(1.8, w * 0.035), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        )
         painter.drawPath(handle)
 
         body = QPainterPath()
-        body.addRoundedRect(QRectF(BODY_L, BODY_T, BODY_R - BODY_L, BODY_B - BODY_T), RADIUS, RADIUS)
+        body.addRoundedRect(
+            QRectF(body_l, body_t, body_r - body_l, body_b - body_t), radius, radius
+        )
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(CARD_BG)
         painter.drawPath(body)
@@ -103,37 +105,39 @@ class DrinkCup(QWidget):
         if level > 0:
             painter.save()
             painter.setClipPath(body)
-            top = BODY_B - (BODY_B - BODY_T) * level + sway
-            water = QRectF(BODY_L - 1, top, BODY_R - BODY_L + 2, BODY_B - top + 1)
+            top = body_b - (body_b - body_t) * level + sway
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(WATER)
-            painter.drawRect(water)
+            painter.drawRect(QRectF(body_l - 1, top, body_r - body_l + 2, body_b - top + 1))
             painter.setBrush(WATER_TOP)
-            painter.drawEllipse(QPointF((BODY_L + BODY_R) / 2, top), (BODY_R - BODY_L) / 2, 1.6)
-
+            painter.drawEllipse(
+                QPointF((body_l + body_r) / 2, top),
+                (body_r - body_l) / 2,
+                max(1.5, h * 0.008),
+            )
             if full:
                 for i in range(2):
                     prog = (self._phase * 0.55 + i * 0.5) % 1.0
-                    cy = BODY_B - 6 - prog * (BODY_B - top - 8)
-                    radius = 1.6 - prog * 0.8
+                    cy = body_b - h * 0.10 - prog * (body_b - top - h * 0.12)
+                    rad = max(1.4, w * 0.035) * (1 - prog * 0.6)
                     painter.setBrush(QColor(181, 212, 244, int(200 * (1 - prog))))
                     painter.drawEllipse(
-                        QPointF(BODY_L + 14 + i * 14, cy), radius, radius
+                        QPointF(body_l + (body_r - body_l) * (0.3 + i * 0.34), cy), rad, rad
                     )
             painter.restore()
 
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(line, 1.6))
+        painter.setPen(QPen(line, max(1.4, w * 0.025)))
         painter.drawPath(body)
 
         if self._cups > 0:
             font = QFont()
-            font.setPixelSize(18)
+            font.setPixelSize(max(11, int(h * 0.20)))
             font.setWeight(QFont.Weight.DemiBold)
             painter.setFont(font)
-            box = QRectF(BODY_L, BODY_T, BODY_R - BODY_L, BODY_B - BODY_T)
+            box = QRectF(body_l, body_t, body_r - body_l, body_b - body_t)
             flag = int(Qt.AlignmentFlag.AlignCenter)
-            painter.setPen(QColor(16, 24, 40, 210))
+            painter.setPen(QColor(16, 24, 40, 215))
             for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                 painter.drawText(box.translated(dx, dy), flag, str(self._cups))
             painter.setPen(TEXT)
@@ -143,4 +147,6 @@ class DrinkCup(QWidget):
             alpha = int(150 + 105 * abs(math.sin(self._phase * 0.6)))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(DOT.red(), DOT.green(), DOT.blue(), alpha))
-            painter.drawEllipse(QPointF(BODY_R + 6, BODY_T - 1), 2.4, 2.4)
+            painter.drawEllipse(
+                QPointF(body_r + w * 0.07, body_t - h * 0.015), w * 0.032, w * 0.032
+            )

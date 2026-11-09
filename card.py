@@ -39,7 +39,7 @@ WEEKDAY_CN = "一二三四五六日"
 
 # 窗口 = 上方鱼的活动区 + 下方卡片。鱼先画，卡片后画，自然把鱼的下半身挡住。
 CARD_TOP = 156
-CARD_HEIGHT = 181
+CARD_HEIGHT = 166
 FISH_CX = 152
 FISH_CY = 96
 
@@ -191,6 +191,10 @@ class MainCard(QWidget):
         self._build()
         self.adjustSize()
 
+        self.cup = DrinkCup(self)
+        self.cup.raise_()
+        self._place_cup()
+
         self.weather_service = WeatherService(cfg, self)
         self.weather_service.updated.connect(self.weather.set_weather)
 
@@ -252,7 +256,13 @@ class MainCard(QWidget):
         root.addSpacing(8)
 
         self.day_bar = MiniBar(ORANGE, 4, self)
-        root.addWidget(self.day_bar)
+        self.day_bar.setFixedWidth(136)
+        bar_row = QHBoxLayout()
+        bar_row.setContentsMargins(0, 0, 0, 0)
+        bar_row.setSpacing(0)
+        bar_row.addWidget(self.day_bar)
+        bar_row.addStretch(1)
+        root.addLayout(bar_row)
 
         root.addSpacing(7)
 
@@ -268,17 +278,27 @@ class MainCard(QWidget):
         self.sit_bar.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
-        self.cup = DrinkCup(self)
-        self.cup.clicked.connect(self.request_drink.emit)
-
         sit_row.addWidget(self.sit_label, 0, Qt.AlignmentFlag.AlignVCenter)
         sit_row.addSpacing(8)
         sit_row.addWidget(self.sit_bar, 0, Qt.AlignmentFlag.AlignVCenter)
         sit_row.addStretch(1)
-        sit_row.addWidget(self.cup, 0, Qt.AlignmentFlag.AlignVCenter)
         root.addLayout(sit_row)
 
     # ------------------------------------------------------------ 刷新
+
+    def _place_cup(self) -> None:
+        """杯子纵向从「距离下班」跨到久坐进度条底部。"""
+        if not hasattr(self, "cup"):
+            return
+        top = self.caption.mapTo(self, QPoint(0, 0)).y()
+        bottom = self.sit_bar.mapTo(self, QPoint(0, 0)).y() + self.sit_bar.height()
+        width = 72
+        left = self.width() - 14 - width
+        self.cup.setGeometry(left, top, width, max(40, bottom - top))
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._place_cup()
 
     def apply_theme(self, theme_id: str) -> None:
         """运行中换主题：重载帧集 + 立刻按当前时段校正待机/吃饭表情。"""
@@ -327,6 +347,7 @@ class MainCard(QWidget):
                 self.dot.set_state(MINT, 0.72 + 0.28 * pulse)
 
         self.cup.set_state(snap.drink_state, snap.drink_cups, snap.drink_left)
+        self._place_cup()
 
         # 久坐一行
         if not snap.sit_active:
