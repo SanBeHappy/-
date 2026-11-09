@@ -2,7 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 echo 正在打包 工位伴侣 ...
-echo 提示：改版本号要同时改 config.py 的 APP_VERSION 和 version_info.txt
+echo 提示：改版本号要同时改三处 —— config.py 的 APP_VERSION、version_info.txt、根目录 VERSION
 echo.
 ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --noconsole ^
   --name "DeskMate" ^
