@@ -9,7 +9,7 @@ from pathlib import Path
 
 APP_NAME = "DeskMate"
 APP_TITLE = "工位伴侣"
-APP_VERSION = "1.0.11"
+APP_VERSION = "1.0.12"
 
 def _resolve_data_dir() -> Path:
     """默认存 %APPDATA%；如果 exe 旁边有 portable.txt，就存到 exe 同级的 DeskMate-data。

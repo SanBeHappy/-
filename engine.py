@@ -56,6 +56,11 @@ class Event:
     monthly: bool = False        # 这次是否连月报一起提醒
 
 
+MIN_DRINK_INTERVAL = 5      # 喝水间隔下限（分钟）
+DRINK_MAX_ALERTS = 3        # 同一轮最多催几次
+DRINK_ALERT_GAP = 10        # 两次催办之间隔多久（分钟）
+
+
 class Engine:
     def __init__(self, cfg) -> None:
         self.cfg = cfg
@@ -100,8 +105,10 @@ class Engine:
         self.cfg.save()
 
     def snooze_drink(self, minutes: int = 10) -> None:
-        """「10 分钟后」：重置计数，过一会儿再催。"""
-        self.drink_last_alert = datetime.now()
+        """「10 分钟后」：用户有响应，本轮计数清零，到点再催一次。"""
+        self.drink_last_alert = datetime.now() - timedelta(
+            minutes=max(0, DRINK_ALERT_GAP - max(1, minutes))
+        )
         self.drink_alerts = 0
 
     def drink_done(self) -> None:
@@ -257,14 +264,16 @@ class Engine:
                     )
 
         # ---- 喝水 ----
+        # 只跟「工作时段」有关，不看久坐开关，也不受「暂停久坐提醒」影响
+        drink_active = workday and start_dt <= now < off_dt and not lunch
         drink_state = "empty"
         drink_left = 0
         drink_ratio = 0.0
         cups = int(self.cfg["drink_cups"] or 0)
         if str(self.cfg["drink_cups_date"] or "") != now.date().isoformat():
             cups = 0
-        if self.cfg["drink_enabled"] and sit_active:
-            interval = max(15, int(self.cfg["drink_interval"] or 60))
+        if self.cfg["drink_enabled"] and drink_active:
+            interval = max(MIN_DRINK_INTERVAL, int(self.cfg["drink_interval"] or 30))
             elapsed = max(0.0, (now - self.drink_start).total_seconds() / 60.0)
             ratio = elapsed / interval
             drink_left = max(0, int(round(interval - elapsed)))
@@ -273,12 +282,18 @@ class Engine:
                 drink_state = "full"
                 due = (
                     self.drink_last_alert is None
-                    or (now - self.drink_last_alert).total_seconds() >= 600
+                    or (now - self.drink_last_alert).total_seconds() >= DRINK_ALERT_GAP * 60
                 )
-                if due and self.drink_alerts < 3:
-                    self.drink_alerts += 1
-                    self.drink_last_alert = now
-                    events.append(Event("drink"))
+                if due:
+                    if self.drink_alerts < DRINK_MAX_ALERTS:
+                        self.drink_alerts += 1
+                        self.drink_last_alert = now
+                        events.append(Event("drink"))
+                    else:
+                        # 催了三次还是没喝，当作这次漏掉，重新起一轮，别一直卡在满水
+                        self.drink_start = now
+                        self.drink_alerts = 0
+                        self.drink_last_alert = None
             elif ratio >= 0.75:
                 drink_state = "half"
         else:

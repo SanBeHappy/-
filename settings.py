@@ -364,7 +364,7 @@ class SettingsWindow(QDialog):
         self.drink_check = Check("该喝水时提醒我")
         body.addWidget(self.drink_check)
         body.addSpacing(7)
-        self.drink_spin = NumField(15, 180, step=15)
+        self.drink_spin = NumField(5, 180, step=5)
         body.addLayout(self._value_row("间隔", self.drink_spin, "分钟"))
         body.addSpacing(14)
         body.addWidget(self._divider())
