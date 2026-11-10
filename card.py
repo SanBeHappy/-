@@ -398,7 +398,6 @@ class MainCard(QWidget):
         self.cup.set_state(snap.drink_ratio, snap.drink_cups, snap.drink_left,
                            snap.drink_state == "full")
         self._place_cup()
-
         # 久坐一行
         if not snap.sit_active:
             self.sit_label.setText(SIT_REASON_TEXT.get(snap.sit_reason, "计时暂停"))
@@ -420,6 +419,11 @@ class MainCard(QWidget):
                 self.sit_label.setStyleSheet(f"color: {TEXT_MID}; padding: 0;")
                 self.sit_bar.set_color(MINT)
             self.sit_bar.set_value(ratio)
+
+        # 水杯是直接画在卡片上的，不是独立控件：素材帧（0/25/50/75/100）一变，
+        # 只改状态不整卡重画，杯子上就会留着上一档水位的旧像素，看起来像水分了层。
+        # 这里统一整卡重画一次，一秒一次，开销可以忽略。
+        self.update()
 
     # ------------------------------------------------------------ 定位
 
@@ -486,7 +490,8 @@ class MainCard(QWidget):
         self.cup.tick(0.033)
         area = QRect(0, 0, self.width(), CARD_TOP)
         if self.cup.bobbing():
-            area = area.united(self.cup.rect())
+            # 满水时杯子上下浮动，绘制会超出 rect 几个像素，重绘区域留点余量
+            area = area.united(self.cup.rect().adjusted(-2, -4, 2, 4))
         self.update(area)
 
     def _in_fish(self, pos: QPoint) -> bool:
