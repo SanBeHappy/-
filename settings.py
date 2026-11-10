@@ -382,6 +382,41 @@ class SettingsWindow(QDialog):
         body.addWidget(self._divider())
         body.addSpacing(10)
 
+        # ---- 自动关机 ----
+        body.addWidget(self._section("自动关机"))
+        body.addSpacing(9)
+        self.shutdown_check = Check("到点自动关机")
+        body.addWidget(self.shutdown_check)
+        body.addSpacing(11)
+
+        body.addWidget(self._field("生效星期"))
+        body.addSpacing(7)
+        shut_chips = QHBoxLayout()
+        shut_chips.setSpacing(5)
+        self.shutdown_week: list[QPushButton] = []
+        for name in WEEK_CHIPS:
+            chip = QPushButton(name)
+            chip.setObjectName("chip")
+            chip.setCheckable(True)
+            chip.setFixedSize(50, 32)
+            chip.setCursor(Qt.CursorShape.PointingHandCursor)
+            chip.setFont(ui_font(13))
+            self.shutdown_week.append(chip)
+            shut_chips.addWidget(chip)
+        shut_chips.addStretch(1)
+        body.addLayout(shut_chips)
+        body.addSpacing(9)
+
+        self.shutdown_time = TimeField()
+        body.addLayout(self._value_row("关机时间", self.shutdown_time, ""))
+        body.addSpacing(7)
+        body.addWidget(
+            self._hint("关机前 5 分钟会提醒一次，那时可以选「今晚不关」")
+        )
+        body.addSpacing(14)
+        body.addWidget(self._divider())
+        body.addSpacing(10)
+
         # ---- 角色主题 ----
         body.addWidget(self._section("角色主题"))
         body.addSpacing(9)
@@ -535,6 +570,11 @@ class SettingsWindow(QDialog):
         self.drink_spin.setValue(int(self.cfg["drink_interval"] or 60))
         self.report_check.setChecked(bool(self.cfg["weekly_report_enabled"]))
         self.report_time.setTime(_to_qtime(self.cfg["weekly_report_time"], "17:40"))
+        self.shutdown_check.setChecked(bool(self.cfg["shutdown_enabled"]))
+        shut_days = self.cfg["shutdown_days"] or []
+        for index, chip in enumerate(self.shutdown_week):
+            chip.setChecked(index in shut_days)
+        self.shutdown_time.setTime(_to_qtime(self.cfg["shutdown_time"], "21:30"))
         self.refresh_theme()
         self.city_edit.setText(self.cfg["weather_city"] or "")
         self.sound_check.setChecked(bool(self.cfg["sound"]))
@@ -547,6 +587,7 @@ class SettingsWindow(QDialog):
 
     def _save(self) -> None:
         days = [i for i, chip in enumerate(self.week_buttons) if chip.isChecked()]
+        shut_days = [i for i, chip in enumerate(self.shutdown_week) if chip.isChecked()]
         old_city = (self.cfg["weather_city"] or "").strip()
         self.cfg.update(
             {
@@ -563,6 +604,9 @@ class SettingsWindow(QDialog):
                 "drink_interval": self.drink_spin.value(),
                 "weekly_report_enabled": self.report_check.isChecked(),
                 "weekly_report_time": self.report_time.time().toString("HH:mm"),
+                "shutdown_enabled": self.shutdown_check.isChecked(),
+                "shutdown_days": shut_days,
+                "shutdown_time": self.shutdown_time.time().toString("HH:mm"),
                 "weather_city": self.city_edit.text().strip(),
                 "sound": self.sound_check.isChecked(),
             }

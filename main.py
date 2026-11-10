@@ -27,11 +27,13 @@ from card import MainCard
 from config import APP_TITLE, APP_VERSION, Config
 from engine import Engine
 from settings import SettingsWindow
+from shutdown import ShutdownScheduler, WARN_BEFORE
 from theme_ui import ThemeEditorWindow, ThemeManagerWindow, UpdateDialog
 from theme import MINT, ORANGE, SETTINGS_QSS, app_icon
 from toast import (
     ToastManager,
     show_off_again,
+    show_shutdown,
     show_off_work,
     show_pre_off,
     show_sit,
@@ -100,6 +102,7 @@ class DeskMate:
             self.cfg["char_theme"] = resolved
             self.cfg.save()
         self.engine = Engine(self.cfg)
+        self.shutdown = ShutdownScheduler(self.cfg)
         self.toasts = ToastManager(self.cfg)
         self.settings_window: SettingsWindow | None = None
         self.theme_manager: ThemeManagerWindow | None = None
@@ -403,6 +406,8 @@ class DeskMate:
         for event in events:
             self.dispatch(event)
 
+        self._check_shutdown(now)
+
     def _update_tooltip(self) -> None:
         if not self.tray:
             return
@@ -444,6 +449,16 @@ class DeskMate:
                 self.toasts, event.minutes, event.hard, self.on_toast_action
             )
 
+    def _check_shutdown(self, now: datetime) -> None:
+        """到点自动关机：提前 5 分钟弹提醒，到点执行。"""
+        action = self.shutdown.check(now)
+        if action == "warn":
+            self._sound("pre")
+            show_shutdown(self.toasts, WARN_BEFORE // 60, self.on_toast_action)
+        elif action == "run":
+            ok, msg = self.shutdown.fire()
+            log(f"自动关机：{msg}" + ("（成功）" if ok else "（未执行）"))
+
     def _sound(self, kind: str) -> None:
         if self.cfg["sound"]:
             play_sound(kind)
@@ -467,6 +482,10 @@ class DeskMate:
             self.engine.snooze_report(10)
         elif key == "off_snooze":
             self.engine.snooze_off(10)
+        elif key == "shutdown_skip":
+            self.shutdown.skip_today()
+        elif key == "shutdown_ok":
+            pass
         self.on_tick()
 
     # ------------------------------------------------------------ 退出

@@ -398,3 +398,16 @@ def show_off_again(mgr: ToastManager, on_action) -> None:
         auto_close_ms=20000,
         urgent=True,
     )
+
+
+def show_shutdown(mgr: ToastManager, minutes: int, on_action) -> None:
+    mgr.show(
+        ORANGE,
+        f"{minutes} 分钟后自动关机",
+        "还在跑的东西记得先保存。今晚不想关，就点左边。",
+        [("今晚不关", "ghost", "shutdown_skip"), ("知道了", "primary", "shutdown_ok")],
+        on_action,
+        auto_close_ms=0,
+        pinned=True,
+        urgent=True,
+    )
