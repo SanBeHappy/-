@@ -9,7 +9,9 @@ from PySide6.QtCore import (
     QEasingCurve,
     QPoint,
     QPropertyAnimation,
+    QRect,
     QRectF,
+    QSize,
     Qt,
     QTimer,
     Signal,
@@ -266,30 +268,50 @@ class ToastManager:
             self._create(*args)
 
     def _slot(self, toast: Toast) -> tuple[int, int]:
-        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
-        area = screen.availableGeometry()
-        fallback = (
-            area.right() - toast.width() - 18,
-            area.bottom() - toast.height() - 18,
-        )
-
         card = None
         if callable(self.anchor):
             try:
                 card = self.anchor()
             except Exception:
                 card = None
-        if card is None or not card.isValid():
-            return fallback
+        if card is not None and not card.isValid():
+            card = None
 
-        # 优先放卡片左边，底边对齐；放不下就放卡片上方
-        x = card.left() - toast.width() - 12
-        if x >= area.left():
-            return x, max(area.top(), card.bottom() - toast.height())
-        y = card.top() - toast.height() - 12
-        if y >= area.top():
-            return max(area.left(), card.right() - toast.width()), y
+        # 多屏：以卡片所在的屏幕为准。以前是按鼠标位置选的屏，
+        # 鼠标停在另一块屏上时，提醒就会跑到那块屏的右下角去。
+        screen = None
+        if card is not None:
+            screen = QGuiApplication.screenAt(card.center())
+        if screen is None:
+            screen = QGuiApplication.screenAt(QCursor.pos())
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        return place_toast(
+            card, QSize(toast.width(), toast.height()), screen.availableGeometry()
+        )
+
+
+def place_toast(anchor: QRect | None, size: QSize, area: QRect) -> tuple[int, int]:
+    """在某块屏幕的可用区域里给提醒窗找落点。
+
+    优先贴卡片左侧、底边对齐；左边放不下就放卡片上方；都放不下退回右下角。
+    """
+    max_x = area.right() - size.width()
+    max_y = area.bottom() - size.height()
+    fallback = (max_x - 18, max_y - 18)
+    if anchor is None or anchor.isNull():
         return fallback
+
+    x = anchor.left() - size.width() - 12
+    if x >= area.left():
+        y = min(max(area.top(), anchor.bottom() - size.height()), max_y)
+        return x, y
+
+    y = anchor.top() - size.height() - 12
+    if y >= area.top():
+        x = min(max(area.left(), anchor.right() - size.width()), max_x)
+        return x, y
+    return fallback
 
 
 # ---------------------------------------------------------------- 预设文案
