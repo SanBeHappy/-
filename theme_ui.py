@@ -1052,8 +1052,8 @@ class OpacityDialog(DarkDialog):
     confirmed = Signal(int)
 
     def __init__(self, value: int, parent=None) -> None:
-        super().__init__("窗口透明度", 360, parent=parent)
-        self._start = max(40, min(100, int(value)))
+        super().__init__("卡片背景透明度", 360, parent=parent)
+        self._start = max(30, min(100, int(value)))
         body = self.body()
 
         self.value_label = QLabel(f"{self._start}%")
@@ -1064,7 +1064,7 @@ class OpacityDialog(DarkDialog):
         body.addSpacing(6)
 
         self.slider = QSlider(Qt.Orientation.Horizontal)
-        self.slider.setRange(40, 100)
+        self.slider.setRange(30, 100)
         self.slider.setValue(self._start)
         self.slider.setStyleSheet(SLIDER_QSS)
         self.slider.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1073,12 +1073,12 @@ class OpacityDialog(DarkDialog):
 
         edge = QHBoxLayout()
         edge.setContentsMargins(0, 0, 0, 0)
-        edge.addWidget(self._hint("40% · 更透"))
+        edge.addWidget(self._hint("30% · 最透"))
         edge.addStretch(1)
         edge.addWidget(self._hint("100% · 不透明"))
         body.addLayout(edge)
         body.addSpacing(10)
-        body.addWidget(self._hint("只影响桌面卡片，提醒弹窗始终保持不透明。"))
+        body.addWidget(self._hint("只调卡片底色的透明度，日期、倒计时、角色和提醒弹窗都不受影响。"))
         body.addSpacing(14)
 
         footer = QHBoxLayout()
