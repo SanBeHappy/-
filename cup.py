@@ -1,7 +1,8 @@
-"""喝水杯子：卡片右侧的马克杯，用五张素材分别表示 0 / 25 / 50 / 75 / 100% 水位。
+"""喝水杯子：卡片右侧的马克杯，用五张素材表示 0 / 25 / 50 / 75 / 100% 水位。
 
-素材在 assets/cup/ 下，尺寸由卡片运行时决定，绘制时等比缩放并底部对齐。
-满水时整只杯子轻轻上下浮动，杯口右上角有个橙色小点脉冲。
+以前是个独立子控件，卡片重绘时它的区域会被背景盖住、又不一定跟着重画，
+偶尔出现「杯子下半截空着」的残影。现在改成跟角色一样，直接画在卡片的
+paintEvent 里，背景和杯子永远在同一趟绘制中完成。
 """
 
 from __future__ import annotations
@@ -10,15 +11,16 @@ import math
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import QWidget
 
 FRAMES = ("0", "25", "50", "75", "100")
 THRESHOLDS = (0.125, 0.375, 0.625, 0.875)
 
 TEXT = QColor("#F2F5FA")
 DOT = QColor("#FF8A4C")
+
+BOB_SPEED = 1.5          # 满水时上下浮动的角速度
 
 
 def _asset_dir() -> Path:
@@ -37,47 +39,41 @@ def _pixmap(name: str) -> QPixmap:
     return _CACHE[name]
 
 
-class DrinkCup(QWidget):
-    clicked = Signal()
+class DrinkCup:
+    """只管状态和画法，不占窗口层级。"""
 
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    def __init__(self) -> None:
         self._ratio = 0.0
         self._cups = 0
         self._left = 60
         self._full = False
         self._phase = 0.0
+        self._rect = QRect()
 
-        self._timer = QTimer(self)
-        self._timer.setInterval(60)
-        self._timer.timeout.connect(self._tick)
+    # ------------------------------------------------------------ 状态
 
     def set_state(self, ratio: float, cups: int, left: int, full: bool) -> None:
-        changed = (
-            abs(ratio - self._ratio) > 0.001
-            or cups != self._cups
-            or full != self._full
-        )
         self._ratio = max(0.0, min(1.0, ratio))
         self._cups = cups
         self._left = left
         self._full = full
-
-        if full:
-            if not self._timer.isActive():
-                self._timer.start()
-            self.setToolTip("该喝水了")
-        else:
-            self._timer.stop()
+        if not full:
             self._phase = 0.0
-            self.setToolTip(f"还有 {left} 分钟该喝水了" if self._ratio >= 0.75 else "")
-        if changed:
-            self.update()
 
-    def _tick(self) -> None:
-        self._phase += 0.09
-        self.update()
+    def tick(self, dt: float) -> None:
+        if self._full:
+            self._phase += dt * BOB_SPEED
+
+    def bobbing(self) -> bool:
+        return self._full
+
+    def set_rect(self, rect: QRect) -> None:
+        self._rect = QRect(rect)
+
+    def rect(self) -> QRect:
+        return QRect(self._rect)
+
+    # ------------------------------------------------------------ 绘制
 
     def _frame(self) -> QPixmap:
         index = len(THRESHOLDS)
@@ -94,15 +90,13 @@ class DrinkCup(QWidget):
             return 0.887
         return src.height() / src.width()
 
-    def paintEvent(self, event) -> None:  # noqa: N802
+    def paint(self, painter: QPainter, rect: QRect | None = None) -> None:
         src = self._frame()
-        if src.isNull():
+        area = QRect(rect) if rect is not None else self.rect()
+        if src.isNull() or area.isEmpty():
             return
 
-        w, h = self.width(), self.height()
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-
+        w, h = area.width(), area.height()
         scaled = src.scaled(
             w,
             h,
@@ -110,8 +104,10 @@ class DrinkCup(QWidget):
             Qt.TransformationMode.SmoothTransformation,
         )
         bob = math.sin(self._phase) * 1.6 if self._full else 0.0
-        x = (w - scaled.width()) / 2
-        y = h - scaled.height() + bob
+        x = area.x() + (w - scaled.width()) / 2
+        y = area.y() + h - scaled.height() + bob
+
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         painter.drawPixmap(QPointF(x, y), scaled)
 
         if self._cups > 0:

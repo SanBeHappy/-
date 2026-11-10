@@ -230,8 +230,7 @@ class MainCard(QWidget):
         self._build()
         self.adjustSize()
 
-        self.cup = DrinkCup(self)
-        self.cup.raise_()
+        self.cup = DrinkCup()
         self._place_cup()
 
         self.weather_service = WeatherService(cfg, self)
@@ -344,7 +343,7 @@ class MainCard(QWidget):
             width = max(40, int(round(height / self.cup.frame_aspect())))
         top = zone_top + max(0, (room - height) // 2)
         left = self.width() - 16 - width
-        self.cup.setGeometry(left, top, width, height)
+        self.cup.set_rect(QRect(left, top, width, height))
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -467,6 +466,9 @@ class MainCard(QWidget):
         painter.setBrush(CARD_BG)
         painter.drawRoundedRect(rect, 16, 16)
 
+        # 3. 最后画水杯（和背景同一趟绘制，不会被盖出残影）
+        self.cup.paint(painter)
+
     def _on_fish_tick(self) -> None:
         self.fish.tick(0.033)
         cursor = self.mapFromGlobal(QCursor.pos())
@@ -481,7 +483,11 @@ class MainCard(QWidget):
             self.setCursor(Qt.CursorShape.PointingHandCursor)
         else:
             self.unsetCursor()
-        self.update(QRect(0, 0, self.width(), CARD_TOP))
+        self.cup.tick(0.033)
+        area = QRect(0, 0, self.width(), CARD_TOP)
+        if self.cup.bobbing():
+            area = area.united(self.cup.rect())
+        self.update(area)
 
     def _in_fish(self, pos: QPoint) -> bool:
         if pos.y() > CARD_TOP - 4:
