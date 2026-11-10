@@ -42,9 +42,9 @@ from toast import (
 SERVER_NAME = "DeskMate.SingleInstance.v1"
 TICK_MS = 250
 
-# 卡片底色透明度档位；30% 以下基本就只剩字浮在桌面上了
+# 菜单里的透明度档位；40% 以下字就看不清了，所以下限压到 40
 OPACITY_STEPS = (100, 90, 80, 70, 60, 50)
-OPACITY_MIN = 30
+OPACITY_MIN = 40
 
 LOG_FILE = Path(os.environ.get("APPDATA") or Path.home()) / "DeskMate" / "error.log"
 
@@ -159,7 +159,7 @@ class DeskMate:
         self.action_pause.triggered.connect(self._toggle_pause)
         menu.addSeparator()
         self.menu_theme = menu.addMenu("角色主题")
-        self.menu_opacity = menu.addMenu("背景透明度")
+        self.menu_opacity = menu.addMenu("窗口透明度")
         self._build_opacity_menu()
         menu.addSeparator()
         self.action_update = menu.addAction(f"检查更新(V{APP_VERSION})")
@@ -246,18 +246,16 @@ class DeskMate:
         for step, act in self._opacity_actions.items():
             act.setChecked(step == value)
         if value in self._opacity_actions:
-            self.menu_opacity.setTitle(f"背景透明度（{value}%）")
+            self.menu_opacity.setTitle(f"窗口透明度（{value}%）")
         else:
-            self.menu_opacity.setTitle(f"背景透明度（{value}% · 自定义）")
+            self.menu_opacity.setTitle(f"窗口透明度（{value}% · 自定义）")
 
     def apply_opacity(self, value: int, persist: bool = True) -> None:
         value = max(OPACITY_MIN, min(100, int(value)))
         self.cfg["opacity"] = value
         if persist:
             self.cfg.save()
-        # 只改卡片底色，不做整窗淡出：文字、角色、进度条保持不透明
-        self.card.setWindowOpacity(1.0)
-        self.card.set_bg_opacity(value)
+        self.card.setWindowOpacity(value / 100.0)
         self._sync_opacity_menu()
 
     def open_opacity_dialog(self) -> None:

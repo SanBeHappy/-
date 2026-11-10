@@ -41,8 +41,6 @@ WEEKDAY_CN = "一二三四五六日"
 
 # 窗口 = 上方鱼的活动区 + 下方卡片。鱼先画，卡片后画，自然把鱼的下半身挡住。
 CARD_TOP = 156
-# 卡片底色的基准不透明度（theme.CARD_BG 本身就是 252，不是纯 255）
-BG_BASE_ALPHA = 252
 CARD_HEIGHT = 166
 FISH_CX = 152
 FISH_CY = 96
@@ -228,7 +226,6 @@ class MainCard(QWidget):
         self._drag_offset: QPoint | None = None
         self._dragged = False
         self._hover = False
-        self._bg_alpha = BG_BASE_ALPHA
         self.fish = FishState(char_theme.resolve(cfg["char_theme"]))
         self._build()
         self.adjustSize()
@@ -352,14 +349,6 @@ class MainCard(QWidget):
         super().resizeEvent(event)
         self._place_cup()
 
-    def set_bg_opacity(self, percent: int) -> None:
-        """只调卡片底色的透明度，文字、角色、进度条保持不透明。"""
-        percent = max(0, min(100, int(percent)))
-        alpha = round(BG_BASE_ALPHA * percent / 100)
-        if alpha != self._bg_alpha:
-            self._bg_alpha = alpha
-            self.update()
-
     def apply_theme(self, theme_id: str) -> None:
         """运行中换主题：重载帧集 + 立刻按当前时段校正待机/吃饭表情。"""
         self.fish.use_theme(theme_id)
@@ -468,32 +457,17 @@ class MainCard(QWidget):
 
     # ------------------------------------------------------------ 绘制
 
-    def _card_bg(self) -> QColor:
-        color = QColor(CARD_BG)
-        color.setAlpha(self._bg_alpha)
-        return color
-
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         # 1. 先画小肥鱼（她会被下面的卡片挡住下半身）
-        # 背景半透明时，如果不裁掉卡片以下的部分，角色的下半身会透过卡片，
-        # 看着像穿帮。这里按卡片顶边把她裁齐，效果跟被卡片挡住一样。
-        painter.save()
-        painter.setClipRect(QRectF(0, 0, self.width(), CARD_TOP + 1))
         self.fish.draw(painter, FISH_CX, 0)
-        painter.restore()
 
         # 2. 再画卡片，盖住鱼的下半身
         rect = QRectF(0.5, CARD_TOP + 0.5, self.width() - 1, CARD_HEIGHT - 1)
-        border = card_border(self._hover)
-        # 描边跟着一起淡，但留个下限，不然卡片边缘会整个消失
-        border.setAlpha(
-            max(26, round(border.alpha() * self._bg_alpha / BG_BASE_ALPHA))
-        )
-        painter.setPen(QPen(border, 1))
-        painter.setBrush(self._card_bg())
+        painter.setPen(QPen(card_border(self._hover), 1))
+        painter.setBrush(CARD_BG)
         painter.drawRoundedRect(rect, 16, 16)
 
         # 3. 最后画水杯（和背景同一趟绘制，不会被盖出残影）
