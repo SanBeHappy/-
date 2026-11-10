@@ -25,7 +25,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
-    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -1032,76 +1031,3 @@ class RenameDialog(DarkDialog):
             self.message.setText(msg)
             return
         self.accept()
-
-
-SLIDER_QSS = (
-    "QSlider { min-height: 22px; }"
-    "QSlider::groove:horizontal { height: 4px; background: rgba(255,255,255,30);"
-    " border-radius: 2px; }"
-    f"QSlider::sub-page:horizontal {{ background: {MINT}; border-radius: 2px; }}"
-    "QSlider::handle:horizontal { width: 14px; height: 14px; margin: -6px 0;"
-    " border-radius: 7px; background: #F3F5F8; }"
-    "QSlider::handle:horizontal:hover { background: #FFFFFF; }"
-)
-
-
-class OpacityDialog(DarkDialog):
-    """拖动滑块实时预览卡片透明度，确定才写进配置。"""
-
-    previewed = Signal(int)
-    confirmed = Signal(int)
-
-    def __init__(self, value: int, parent=None) -> None:
-        super().__init__("窗口透明度", 360, parent=parent)
-        self._start = max(40, min(100, int(value)))
-        body = self.body()
-
-        self.value_label = QLabel(f"{self._start}%")
-        self.value_label.setFont(ui_font(30, QFont.Weight.DemiBold))
-        self.value_label.setStyleSheet(f"color: {MINT}; padding: 0;")
-        self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        body.addWidget(self.value_label)
-        body.addSpacing(6)
-
-        self.slider = QSlider(Qt.Orientation.Horizontal)
-        self.slider.setRange(40, 100)
-        self.slider.setValue(self._start)
-        self.slider.setStyleSheet(SLIDER_QSS)
-        self.slider.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.slider.valueChanged.connect(self._on_change)
-        body.addWidget(self.slider)
-
-        edge = QHBoxLayout()
-        edge.setContentsMargins(0, 0, 0, 0)
-        edge.addWidget(self._hint("40% · 更透"))
-        edge.addStretch(1)
-        edge.addWidget(self._hint("100% · 不透明"))
-        body.addLayout(edge)
-        body.addSpacing(10)
-        body.addWidget(self._hint("只影响桌面卡片，提醒弹窗始终保持不透明。"))
-        body.addSpacing(14)
-
-        footer = QHBoxLayout()
-        footer.addStretch(1)
-        cancel = self._ghost("取消", 68)
-        cancel.clicked.connect(self.reject)
-        ok = self._primary("确定")
-        ok.clicked.connect(self._accept)
-        footer.addWidget(cancel)
-        footer.addSpacing(8)
-        footer.addWidget(ok)
-        body.addLayout(footer)
-        self.adjustSize()
-
-    def _on_change(self, value: int) -> None:
-        self.value_label.setText(f"{value}%")
-        self.previewed.emit(int(value))
-
-    def _accept(self) -> None:
-        self.confirmed.emit(int(self.slider.value()))
-        self.accept()
-
-    def reject(self) -> None:  # noqa: D401
-        # 取消 / 点 × ：把透明度还原成打开弹窗时的值
-        self.previewed.emit(self._start)
-        super().reject()

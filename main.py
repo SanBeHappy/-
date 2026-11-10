@@ -27,7 +27,7 @@ from card import MainCard
 from config import APP_TITLE, APP_VERSION, Config
 from engine import Engine
 from settings import SettingsWindow
-from theme_ui import OpacityDialog, ThemeEditorWindow, ThemeManagerWindow, UpdateDialog
+from theme_ui import ThemeEditorWindow, ThemeManagerWindow, UpdateDialog
 from theme import MINT, ORANGE, SETTINGS_QSS, app_icon
 from toast import (
     ToastManager,
@@ -41,10 +41,6 @@ from toast import (
 
 SERVER_NAME = "DeskMate.SingleInstance.v1"
 TICK_MS = 250
-
-# 菜单里的透明度档位；40% 以下字就看不清了，所以下限压到 40
-OPACITY_STEPS = (100, 90, 80, 70, 60, 50)
-OPACITY_MIN = 40
 
 LOG_FILE = Path(os.environ.get("APPDATA") or Path.home()) / "DeskMate" / "error.log"
 
@@ -108,7 +104,6 @@ class DeskMate:
         self.settings_window: SettingsWindow | None = None
         self.theme_manager: ThemeManagerWindow | None = None
         self.theme_editor: ThemeEditorWindow | None = None
-        self.opacity_dialog: OpacityDialog | None = None
         self.updater: update.UpdateChecker | None = None
         self._silent_check = False
         # 每 30 分钟悄悄查一次新版本，有更新就在卡片上亮红字
@@ -127,7 +122,6 @@ class DeskMate:
         self.toasts.anchor = self._toast_anchor
 
         self.tray = self._build_tray()
-        self.apply_opacity(self.cfg["opacity"], persist=False)
 
         self.timer = QTimer()
         self.timer.setInterval(TICK_MS)
@@ -159,8 +153,6 @@ class DeskMate:
         self.action_pause.triggered.connect(self._toggle_pause)
         menu.addSeparator()
         self.menu_theme = menu.addMenu("角色主题")
-        self.menu_opacity = menu.addMenu("窗口透明度")
-        self._build_opacity_menu()
         menu.addSeparator()
         self.action_update = menu.addAction(f"检查更新(V{APP_VERSION})")
         self.action_update.triggered.connect(self.check_update)
@@ -192,7 +184,6 @@ class DeskMate:
         else:
             self.action_drink.setText("喝水重置（提醒已关闭）")
         self._rebuild_theme_menu()
-        self._sync_opacity_menu()
 
     def _rebuild_theme_menu(self) -> None:
         sub = self.menu_theme
@@ -210,67 +201,6 @@ class DeskMate:
         manage = sub.addAction("管理主题…")
         manage.triggered.connect(self.open_theme_manager)
         self._theme_group = group
-
-    # ------------------------------------------------------------ 透明度
-
-    def _opacity_value(self) -> int:
-        try:
-            value = int(self.cfg["opacity"])
-        except (TypeError, ValueError):
-            value = 100
-        return max(OPACITY_MIN, min(100, value))
-
-    def _build_opacity_menu(self) -> None:
-        sub = self.menu_opacity
-        sub.clear()
-        group = QActionGroup(sub)
-        group.setExclusive(True)
-        self._opacity_actions: dict[int, object] = {}
-        for value in OPACITY_STEPS:
-            text = f"{value}% · 不透明" if value == 100 else f"{value}%"
-            act = sub.addAction(text)
-            act.setCheckable(True)
-            act.triggered.connect(lambda _=False, v=value: self.apply_opacity(v))
-            group.addAction(act)
-            self._opacity_actions[value] = act
-        sub.addSeparator()
-        custom = sub.addAction("自定义…")
-        custom.triggered.connect(self.open_opacity_dialog)
-        self._opacity_group = group
-        self._sync_opacity_menu()
-
-    def _sync_opacity_menu(self) -> None:
-        if not hasattr(self, "_opacity_actions"):
-            return
-        value = self._opacity_value()
-        for step, act in self._opacity_actions.items():
-            act.setChecked(step == value)
-        if value in self._opacity_actions:
-            self.menu_opacity.setTitle(f"窗口透明度（{value}%）")
-        else:
-            self.menu_opacity.setTitle(f"窗口透明度（{value}% · 自定义）")
-
-    def apply_opacity(self, value: int, persist: bool = True) -> None:
-        value = max(OPACITY_MIN, min(100, int(value)))
-        self.cfg["opacity"] = value
-        if persist:
-            self.cfg.save()
-        self.card.setWindowOpacity(value / 100.0)
-        self._sync_opacity_menu()
-
-    def open_opacity_dialog(self) -> None:
-        if self.opacity_dialog is not None and self.opacity_dialog.isVisible():
-            self.opacity_dialog.raise_()
-            self.opacity_dialog.activateWindow()
-            return
-        dialog = OpacityDialog(self._opacity_value(), None)
-        dialog.setWindowIcon(app_icon())
-        dialog.previewed.connect(lambda v: self.apply_opacity(v, persist=False))
-        dialog.confirmed.connect(self.apply_opacity)
-        self.opacity_dialog = dialog
-        dialog.show()
-        dialog.raise_()
-        dialog.activateWindow()
 
     def _toggle_pause(self) -> None:
         if self.engine.pause_until:
