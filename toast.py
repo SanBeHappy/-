@@ -295,23 +295,41 @@ def place_toast(anchor: QRect | None, size: QSize, area: QRect) -> tuple[int, in
     """在某块屏幕的可用区域里给提醒窗找落点。
 
     优先贴卡片左侧、底边对齐；左边放不下就放卡片上方；都放不下退回右下角。
+    任何情况下都不允许压住卡片本身（右下角经常就是卡片待的地方）。
     """
-    max_x = area.right() - size.width()
-    max_y = area.bottom() - size.height()
+    w, h = size.width(), size.height()
+    max_x = area.right() - w
+    max_y = area.bottom() - h
     fallback = (max_x - 18, max_y - 18)
     if anchor is None or anchor.isNull():
         return fallback
 
-    x = anchor.left() - size.width() - 12
+    # 1) 卡片左侧，底边对齐
+    x = anchor.left() - w - 12
     if x >= area.left():
-        y = min(max(area.top(), anchor.bottom() - size.height()), max_y)
-        return x, y
+        y = min(max(area.top(), anchor.bottom() - h), max_y)
+        if not QRect(x, y, w, h).intersects(anchor):
+            return x, y
 
-    y = anchor.top() - size.height() - 12
+    # 2) 卡片上方，右边缘对齐
+    y = anchor.top() - h - 12
     if y >= area.top():
-        x = min(max(area.left(), anchor.right() - size.width()), max_x)
-        return x, y
-    return fallback
+        x = min(max(area.left(), anchor.right() - w), max_x)
+        if not QRect(x, y, w, h).intersects(anchor):
+            return x, y
+
+    # 3) 退回右下角；如果那里正好是卡片，就挪到卡片上方/下方
+    x, y = fallback
+    if QRect(x, y, w, h).intersects(anchor):
+        above = anchor.top() - h - 12
+        below = anchor.bottom() + 8
+        if above >= area.top():
+            y = above
+        elif below + h <= area.bottom():
+            y = below
+        else:
+            y = max(area.top(), min(y, anchor.top() - h - 12))
+    return x, y
 
 
 # ---------------------------------------------------------------- 预设文案
@@ -384,14 +402,23 @@ def show_report(mgr: ToastManager, monthly: bool, on_action) -> None:
     if monthly:
         title = "该写月报了"
         body = random.choice(MONTHLY_LINES)
+        actions = [
+            ("10 分钟后", "ghost", "report_snooze"),
+            ("写过了", "primary", "report_ok"),
+        ]
     else:
         title = "该写周报了"
         body = random.choice(REPORT_LINES)
+        actions = [
+            ("打开飞书", "primary", "report_feishu"),
+            ("10 分钟后", "ghost", "report_snooze"),
+            ("写过了", "ghost", "report_ok"),
+        ]
     mgr.show(
         MINT,
         title,
         body,
-        [("10 分钟后", "ghost", "report_snooze"), ("写过了", "primary", "report_ok")],
+        actions,
         on_action,
         auto_close_ms=30000,
         urgent=True,

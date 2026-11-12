@@ -22,6 +22,8 @@ from PySide6.QtGui import QActionGroup
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 import char_theme
+import cup
+import feishu
 import update
 from card import MainCard
 from config import APP_TITLE, APP_VERSION, Config
@@ -96,6 +98,7 @@ class DeskMate:
     def __init__(self, app: QApplication) -> None:
         self.app = app
         self.cfg = Config()
+        cup.set_logger(log)
         # 主题可能被外部删掉了，静默回落到内置并回写
         resolved = char_theme.resolve(self.cfg["char_theme"])
         if resolved != self.cfg["char_theme"]:
@@ -480,6 +483,21 @@ class DeskMate:
             self.engine.mark_report_done()
         elif key == "report_snooze":
             self.engine.snooze_report(10)
+        elif key == "report_feishu":
+            ok, detail = feishu.open_feishu()
+            log(f"打开飞书：{'成功' if ok else '失败'} · {detail}")
+            if ok:
+                # 打开成功就当作这次提醒已经处理，免得重启后又弹一遍
+                self.engine.mark_report_done()
+            else:
+                self.toasts.show(
+                    ORANGE,
+                    "没能打开飞书",
+                    detail,
+                    [("知道了", "primary", "noop")],
+                    self.on_toast_action,
+                    auto_close_ms=12000,
+                )
         elif key == "off_snooze":
             self.engine.snooze_off(10)
         elif key == "shutdown_skip":
