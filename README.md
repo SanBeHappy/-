@@ -37,13 +37,13 @@ Windows 桌面挂件，Python + PySide6，单文件 exe，不装环境直接跑�
 
 ## 怎么用
 
-1. 下载 `DeskMate.exe`，双击运行
+1. 下载 `DeskMate.zip`，解压到任意目录，双击里面的 `DeskMate\DeskMate.exe`
 2. 首次运行在右下角出现卡片，右键图标或卡片进设置
 3. 设置里填上下班时间、工作日、久坐间隔、天气城市
 
 ### 便携模式
 
-把 `DeskMate.exe` 和一个空的 `portable.txt` 放在同一个文件夹里，配置和自定义主题就会写到旁边的 `DeskMate-data\`，整个文件夹拷到别的电脑可以直接用。
+把空的 `portable.txt` 放在 `DeskMate.exe` 旁边（`DeskMate\` 目录里），配置和自定义主题就会写到旁边的 `DeskMate-data\`，整个文件夹拷到别的电脑可以直接用。
 
 不加 `portable.txt` 则存在 `%APPDATA%\DeskMate`。
 
@@ -52,7 +52,8 @@ Windows 桌面挂件，Python + PySide6，单文件 exe，不装环境直接跑�
 - Windows 10 1809 以上 / Windows 11
 - 64 位
 
-运行库已打包进 exe，不需要额外安装。
+运行库随目录一起打包（`_internal\`），不需要额外安装。不用单文件模式是为了避免每次启动都往
+`%TEMP%` 解压一份 `_MEI*` 临时目录 —— 目录模式启动更快，也不会留垃圾。
 
 ## 开发
 
@@ -60,7 +61,7 @@ Windows 桌面挂件，Python + PySide6，单文件 exe，不装环境直接跑�
 python -m venv .venv
 .venv\Scripts\pip install PySide6 pyinstaller
 .venv\Scripts\python main.py     # 直接跑
-build.bat                        # 打包成 dist\DeskMate.exe
+build.bat                        # 打包成 dist\DeskMate\，并生成 dist\DeskMate.zip
 ```
 
 ### 代码结构
@@ -84,11 +85,12 @@ build.bat                        # 打包成 dist\DeskMate.exe
 
 1. 改三处版本号：`config.py` 的 `APP_VERSION`、`version_info.txt`、根目录 `VERSION`
 2. 在 `CHANGELOG.md` 顶部加一段这次的更新内容
-3. `build.bat` 打包（会先关掉正在运行的实例，打完自动复核版本并生成 `SHA256SUMS`）
-4. 在 GitHub 建一个 release（tag 用 `v版本号`），**把 `dist/DeskMate.exe` 作为附件传上去**，文件名必须是 `DeskMate.exe`
+3. `build.bat` 打包（会先关掉正在运行的实例，打完复核版本、压出 `dist\DeskMate.zip` 并写 `SHA256SUMS`）
+4. 在 GitHub 建一个 release（tag 用 `v版本号`），**把 `dist/DeskMate.zip` 作为附件传上去**，文件名必须是 `DeskMate.zip`
 5. 提交并推送（`SHA256SUMS` 要一起提交）
 
-检查更新的下载地址是 `releases/latest/download/DeskMate.exe`，所以只要最新那个 release 里有这个附件就能用。
+检查更新的下载地址是 `releases/latest/download/DeskMate.zip`，客户端下载后解压、等本进程退出、
+用 `swap.bat` 把旧目录改名成 `DeskMate.old`、新目录就位、再拉起新版；下次启动会清掉 `.old`。
 第 4 步忘了，用户会看到新版本号却下载不到包。
 
 客户端下载完会拿 `SHA256SUMS` 校验，对不上就放弃更新 —— 所以 3 和 5 的顺序不能颠倒：

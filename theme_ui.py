@@ -773,52 +773,15 @@ class UpdateDialog(DarkDialog):
 
         self._proc = proc
         self._stamp = stamp
-        self._waited = 0
         self.go.setEnabled(False)
         self.go.setText("重启中")
         self.later.setEnabled(False)
-        self.status.setText("新版本已就位，正在启动…")
+        self.status.setText("新版本已就位，正在重启…")
         self.status.setStyleSheet(f"color: {TEXT_MID}; padding: 0;")
 
-        self._watch = QTimer(self)
-        self._watch.timeout.connect(self._watch_start)
-        self._watch.start(500)
-
-    def _watch_start(self) -> None:
-        """等新进程盖章（mark_started），确认真的活过来再退出本进程。"""
-        if update.started_after(self._stamp):
-            self._watch.stop()
-            self.status.setText("新版本已启动，本窗口即将关闭")
-            self.status.setStyleSheet(f"color: {MINT}; padding: 0;")
-            QTimer.singleShot(400, QApplication.instance().quit)
-            return
-
-        self._waited += 1
-        alive = self._proc is not None and self._proc.poll() is None
-        if not alive and self._waited >= 2:
-            self._fail("新版本启动失败")
-            return
-        if self._waited >= 30:                 # 约 15 秒
-            self._fail("新版本迟迟没有启动")
-
-    def _fail(self, reason: str) -> None:
-        if self._watch is not None:
-            self._watch.stop()
-        try:
-            if self._proc is not None and self._proc.poll() is None:
-                self._proc.kill()
-        except Exception:
-            pass
-        restored = update.rollback()
-        if callable(self.after_fail):
-            try:
-                self.after_fail()
-            except Exception:
-                pass
-        if restored:
-            self._retry(f"{reason}，已还原到上一版，稍后再试")
-        else:
-            self._retry(f"{reason}，也没能还原旧版本，请手动重新下载")
+        # 目录模式没法在运行中替换自己所在的文件夹：更新脚本会等本进程退出后
+        # 再换目录并拉起新版，所以这里只管退出，不再等新进程的启动标记。
+        QTimer.singleShot(800, QApplication.instance().quit)
 
     def _retry(self, message: str) -> None:
         self.status.setText(message)

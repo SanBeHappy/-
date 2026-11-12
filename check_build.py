@@ -1,8 +1,9 @@
-"""打包后自检：dist\\DeskMate.exe 的版本必须等于 config.APP_VERSION。
+"""打包后自检：dist\\DeskMate\\DeskMate.exe 的版本必须等于 config.APP_VERSION。
 
 打包时如果 exe 还被旧进程占用，PyInstaller 会失败或者写不进去，dist 里留下的
 就是上一版；以前光看「打包完成」会误以为成功，结果把旧包当新包发出去。
-这个脚本专门堵这个坑，顺便打印体积和 sha256（传 Release 时对照用）。
+这个脚本堵这个坑，顺便把 dist\\DeskMate 打成 DeskMate.zip、写 SHA256SUMS
+（传 Release 用），并打印体积和 sha256 方便对照。
 
 退出码：0 = 一致，1 = 不一致或文件缺失。
 """
@@ -12,11 +13,14 @@ from __future__ import annotations
 import ctypes
 import hashlib
 import sys
+import zipfile
 from ctypes import wintypes
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-EXE = ROOT / "dist" / "DeskMate.exe"
+APP_DIR = ROOT / "dist" / "DeskMate"
+EXE = APP_DIR / "DeskMate.exe"
+ZIP = ROOT / "dist" / "DeskMate.zip"
 
 
 class _FixedFileInfo(ctypes.Structure):
@@ -58,6 +62,16 @@ def exe_version(path: Path) -> str:
     return f"{ms >> 16}.{ms & 0xFFFF}.{ls >> 16}.{ls & 0xFFFF}"
 
 
+def make_zip() -> None:
+    """把 dist\\DeskMate 整个目录压成 DeskMate.zip（内容放在 zip 根上）。"""
+    if ZIP.exists():
+        ZIP.unlink()
+    with zipfile.ZipFile(ZIP, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for item in sorted(APP_DIR.rglob("*")):
+            if item.is_file():
+                zf.write(item, item.relative_to(APP_DIR).as_posix())
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
@@ -87,9 +101,19 @@ def main() -> int:
         print("  [X] 版本不一致，dist 里还是旧包，不要上传")
         return 1
 
+    try:
+        make_zip()
+    except OSError as exc:
+        print(f"  [X] 打 zip 失败：{exc}")
+        return 1
+    zip_digest = sha256(ZIP)
+    zip_size = ZIP.stat().st_size / 1048576
+    print(f"  已打包 {ZIP.name}（{zip_size:.1f} MB）")
+    print(f"  zip sha256 {zip_digest}")
+
     sums = ROOT / "SHA256SUMS"
     try:
-        sums.write_text(f"{digest}  DeskMate.exe\n", encoding="utf-8")
+        sums.write_text(f"{zip_digest}  DeskMate.zip\n", encoding="utf-8")
         print(f"  已写入 {sums.name}（客户端下载完会拿它校验）")
     except OSError as exc:
         print(f"  [X] 写 SHA256SUMS 失败：{exc}")

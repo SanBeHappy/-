@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QUrl, Signal
@@ -26,7 +27,8 @@ BRANCH = "main"
 VERSION_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/VERSION"
 CHANGELOG_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/CHANGELOG.md"
 # 走 GitHub Releases：latest 会自动指向最新一个正式版
-ASSET_URL = f"https://github.com/{REPO}/releases/latest/download/DeskMate.exe"
+# 目录模式发布的是打好的 zip，解压就是 DeskMate\DeskMate.exe
+ASSET_URL = f"https://github.com/{REPO}/releases/latest/download/DeskMate.zip"
 
 UPDATE_DIR = Path(tempfile.gettempdir()) / "DeskMate-update"
 PAGE_URL = f"https://github.com/{REPO}"
@@ -144,11 +146,11 @@ SUMS_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/SHA256SUMS"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 
 
-def _looks_like_exe(path: Path) -> bool:
-    """最基础的完整性判断：Windows 可执行文件必须以 MZ 开头。"""
+def _looks_like_zip(path: Path) -> bool:
+    """最基础的完整性判断：zip 必须以 PK\x03\x04 开头。"""
     try:
         with open(path, "rb") as handle:
-            return handle.read(2) == b"MZ"
+            return handle.read(4) == b"PK\x03\x04"
     except OSError:
         return False
 
@@ -167,7 +169,7 @@ class UpdateDownloader(QObject):
     progress = Signal(int, int)      # 已下载字节, 总字节
     finished = Signal(str, str)      # 文件路径, 错误
 
-    MIN_SIZE = 5 * 1024 * 1024       # 小于 5MB 一定是坏包
+    MIN_SIZE = 15 * 1024 * 1024      # 小于 15MB 一定是坏包
 
     def __init__(self) -> None:
         super().__init__()
@@ -180,7 +182,7 @@ class UpdateDownloader(QObject):
 
     def start(self) -> None:
         UPDATE_DIR.mkdir(parents=True, exist_ok=True)
-        self._target = UPDATE_DIR / "DeskMate.exe"
+        self._target = UPDATE_DIR / "DeskMate.zip"
         self._part = UPDATE_DIR / "DeskMate.part"
         self._expect = ""
         self._bad.clear()
@@ -227,8 +229,8 @@ class UpdateDownloader(QObject):
             size = self._part.stat().st_size if self._part.exists() else 0
             if size < self.MIN_SIZE:
                 error = "下载到的文件不完整"
-            elif not _looks_like_exe(self._part):
-                error = "下载到的不是可执行文件"
+            elif not _looks_like_zip(self._part):
+                error = "下载到的不是有效的压缩包"
             else:
                 try:
                     os.replace(self._part, self._target)
@@ -268,7 +270,7 @@ class UpdateDownloader(QObject):
     def _parse_sums(text: str) -> str:
         for raw in (text or "").splitlines():
             parts = raw.split()
-            if len(parts) >= 2 and parts[-1].lstrip("*") == "DeskMate.exe":
+            if len(parts) >= 2 and parts[-1].lstrip("*") == "DeskMate.zip":
                 candidate = parts[0].lower()
                 if len(candidate) == 64:
                     return candidate
@@ -306,7 +308,7 @@ class UpdateDownloader(QObject):
                 if r.error() == QNetworkReply.NetworkError.NoError:
                     data = json.loads(bytes(r.readAll()).decode("utf-8", "ignore"))
                     for asset in data.get("assets") or []:
-                        if asset.get("name") == "DeskMate.exe":
+                        if asset.get("name") == "DeskMate.zip":
                             expect = (asset.get("digest") or "").replace("sha256:", "").lower()
                             break
             except Exception:
@@ -375,95 +377,126 @@ def clear_started() -> None:
 
 
 def drop_old_copy(target: Path | None = None) -> None:
-    """启动时清掉上次留下的 .old.exe；删不掉说明还有旧进程在跑，忽略即可。"""
-    target = target or current_exe()
-    if target is None:
+    """启动时清掉上一版留下的 .old 目录；删不掉说明旧进程还没退干净，忽略即可。"""
+    exe = Path(target).resolve() if target else current_exe()
+    if exe is None:
         return
-    backup = target.with_suffix(".old.exe")
+    app_dir = exe.parent
+    backup = app_dir.with_name(app_dir.name + ".old")
     if not backup.exists():
         return
-    try:
-        backup.unlink()
-    except OSError:
-        pass
-
-
-def apply_update(
-    new_exe: Path, target: Path | None = None
-) -> tuple[bool, str, "subprocess.Popen[bytes] | None"]:
-    """就地替换：把正在运行的 exe 改名备份 → 新文件就位 → 拉起新进程。
-
-    Windows 允许重命名正在运行的可执行文件（只是不能覆盖/删除），
-    所以整个替换可以在进程内完成，不需要外部脚本。
-    返回 (是否成功, 错误信息, 新进程句柄)。
-    """
-    target = Path(target).resolve() if target else current_exe()
-    if target is None:
-        return False, "开发模式下不支持自动更新", None
-    new_exe = Path(new_exe).resolve()
-    if not new_exe.exists():
-        return False, "找不到下载好的文件", None
-    if not _looks_like_exe(new_exe):
-        return False, "更新包不是有效的可执行文件", None
-    try:
-        if new_exe.stat().st_size < UpdateDownloader.MIN_SIZE:
-            return False, "更新包不完整", None
-    except OSError as exc:
-        return False, f"读取更新包失败：{exc}", None
-
-    backup = target.with_suffix(".old.exe")
-    try:
-        if backup.exists():
-            try:
-                backup.unlink()
-            except OSError:
-                pass
-        os.replace(target, backup)
-    except OSError as exc:
-        return False, f"备份当前版本失败：{exc}", None
-
-    try:
-        shutil.move(str(new_exe), str(target))
-    except OSError as exc:
+    for _ in range(3):
         try:
-            os.replace(backup, target)
+            shutil.rmtree(backup)
+            return
         except OSError:
-            pass
-        return False, f"替换失败，已还原旧版本：{exc}", None
+            time.sleep(0.5)
 
-    clear_started()
+
+# 换目录的批处理：等本进程退干净 → 旧目录改名 .old → 新目录就位 → 启动新版本。
+# 全程只用 ASCII，路径靠参数传进来，避免中文路径在 cmd 里变乱码。
+_SWAP_BAT = r"""@echo off
+setlocal
+set "APP=%~1"
+set "NEW=%~2"
+set "OLD=%APP%.old"
+set /a TRIES=0
+:wait
+tasklist /FI "IMAGENAME eq DeskMate.exe" 2>nul | find /I "DeskMate.exe" >nul
+if errorlevel 1 goto swap
+set /a TRIES+=1
+if %TRIES% GEQ 60 goto giveup
+ping -n 2 127.0.0.1 >nul
+goto wait
+:swap
+if exist "%OLD%" rmdir /s /q "%OLD%" >nul 2>&1
+move "%APP%" "%OLD%" >nul 2>&1
+if errorlevel 1 goto putback
+move "%NEW%" "%APP%" >nul 2>&1
+if errorlevel 1 goto restore
+start "" "%APP%\DeskMate.exe" --restarted
+exit /b 0
+:restore
+move "%OLD%" "%APP%" >nul 2>&1
+:putback
+start "" "%APP%\DeskMate.exe" --restarted
+exit /b 1
+:giveup
+start "" "%APP%\DeskMate.exe" --restarted
+exit /b 2
+"""
+
+
+def _detached_flags() -> int:
     flags = 0
     for name in ("DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP", "CREATE_NO_WINDOW"):
         flags |= int(getattr(subprocess, name, 0))
+    return flags
+
+
+def _spawn_swap(app_dir: Path, new_dir: Path) -> "subprocess.Popen[bytes]":
+    UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+    script = UPDATE_DIR / "swap.bat"
+    script.write_text(_SWAP_BAT, encoding="ascii", newline="\r\n")
+    return subprocess.Popen(
+        ["cmd", "/c", str(script), str(app_dir), str(new_dir)],
+        cwd=str(UPDATE_DIR),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=_detached_flags(),
+        close_fds=True,
+    )
+
+
+def apply_update(
+    package: Path, target: Path | None = None
+) -> tuple[bool, str, "subprocess.Popen[bytes] | None"]:
+    """把下载好的 zip 解压到临时目录，然后交给换目录脚本处理。
+
+    目录模式的程序没法在运行中替换自己所在的文件夹，所以这里只负责解压 +
+    写脚本 + 启动脚本，真正的「旧目录改名 / 新目录就位 / 重启」由脚本在
+    本进程退出后完成。返回 (是否成功, 错误信息, 脚本进程句柄)。
+    """
+    exe = Path(target).resolve() if target else current_exe()
+    if exe is None:
+        return False, "开发模式下不支持自动更新", None
+    package = Path(package)
+    if not package.exists():
+        return False, "找不到下载好的更新包", None
+    if not _looks_like_zip(package):
+        return False, "更新包不是有效的压缩文件", None
+
+    new_dir = UPDATE_DIR / "new"
     try:
-        proc = subprocess.Popen(
-            [str(target), RESTART_FLAG],
-            cwd=str(target.parent),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=flags,
-            close_fds=True,
-        )
+        if new_dir.exists():
+            shutil.rmtree(new_dir)
+        new_dir.mkdir(parents=True)
+        with zipfile.ZipFile(package) as archive:
+            archive.extractall(new_dir)
+    except (OSError, zipfile.BadZipFile) as exc:
+        return False, f"解压更新包失败：{exc}", None
+
+    root = new_dir
+    if not (root / "DeskMate.exe").exists():
+        inner = new_dir / "DeskMate"
+        if (inner / "DeskMate.exe").exists():
+            root = inner
+        else:
+            return False, "更新包里没找到 DeskMate.exe", None
+
+    app_dir = exe.parent
+    try:
+        if _spawn_swap(app_dir, root):
+            return True, "", None
     except OSError as exc:
-        try:
-            os.replace(backup, target)
-        except OSError:
-            pass
-        return False, f"启动新版本失败，已还原：{exc}", None
-    return True, "", proc
+        return False, f"启动更新脚本失败：{exc}", None
+    return False, "启动更新脚本失败", None
 
 
-def rollback(target: Path | None = None) -> bool:
-    """把 .old.exe 换回来，用于新版本起不来的兜底。"""
-    target = Path(target).resolve() if target else current_exe()
-    if target is None:
+def is_folder_install() -> bool:
+    """当前是不是目录模式（exe 旁边有 _internal）。"""
+    exe = current_exe()
+    if exe is None:
         return False
-    backup = target.with_suffix(".old.exe")
-    if not backup.exists():
-        return False
-    try:
-        os.replace(backup, target)
-        return True
-    except OSError:
-        return False
+    return (exe.parent / "_internal").is_dir() or (exe.parent / "assets").is_dir()
