@@ -109,6 +109,8 @@ class DeskMate:
         self.shutdown = ShutdownScheduler(self.cfg)
         self._wrapup_date = ""
         self.toasts = ToastManager(self.cfg)
+        if update.update_failed():
+            QTimer.singleShot(1500, self._notify_update_failed)
         self.settings_window: SettingsWindow | None = None
         self.theme_manager: ThemeManagerWindow | None = None
         self.theme_editor: ThemeEditorWindow | None = None
@@ -353,8 +355,22 @@ class DeskMate:
         self.engine.stand_up()
         self.on_tick()
 
+    def _notify_update_failed(self) -> None:
+        self.toasts.show(
+            ORANGE,
+            "上次自动更新没成功",
+            "新版本下载好了但没能替换文件。可以点菜单里的「检查更新」再试，或手动下载。",
+            [("知道了", "primary", "noop")],
+            self.on_toast_action,
+            auto_close_ms=0,
+        )
+
     def check_update(self, silent: bool = False) -> None:
         """silent=True 时只在卡片上亮提示，不弹窗、不打扰（后台轮询用）。"""
+        if silent and update.update_failed():
+            return          # 上次没换成，后台别再自动折腾
+        if not silent:
+            update.clear_update_failed()
         if self.updater is None:
             self.updater = update.UpdateChecker()   # DeskMate 不是 QObject，不能当 parent
             self.updater.finished.connect(self.on_update_result)

@@ -399,52 +399,106 @@ _SWAP_BAT = r"""@echo off
 setlocal
 set "APP=%~1"
 set "NEW=%~2"
+set "PID=%~3"
+set "LOG=%~4"
+set "FLAG=%~5"
 set "OLD=%APP%.old"
 set /a TRIES=0
 :wait
-tasklist /FI "IMAGENAME eq DeskMate.exe" 2>nul | find /I "DeskMate.exe" >nul
+tasklist /FI "PID eq %PID%" 2>nul | find /I "DeskMate.exe" >nul
 if errorlevel 1 goto swap
 set /a TRIES+=1
-if %TRIES% GEQ 60 goto giveup
+if %TRIES% GEQ 30 goto giveup
 ping -n 2 127.0.0.1 >nul
 goto wait
 :swap
-if exist "%OLD%" rmdir /s /q "%OLD%" >nul 2>&1
-move "%APP%" "%OLD%" >nul 2>&1
-if errorlevel 1 goto putback
-move "%NEW%" "%APP%" >nul 2>&1
-if errorlevel 1 goto restore
+>>"%LOG%" echo [%DATE% %TIME%] pid %PID% exited, start swapping
+if exist "%OLD%" rmdir /s /q "%OLD%" >>"%LOG%" 2>&1
+set /a MOVE=0
+:trymove
+set /a MOVE+=1
+move "%APP%" "%OLD%" >>"%LOG%" 2>&1
+if not exist "%APP%" goto moved
+if %MOVE% GEQ 3 goto failed
+ping -n 2 127.0.0.1 >nul
+goto trymove
+:moved
+>>"%LOG%" echo [%DATE% %TIME%] old dir -> .old
+move "%NEW%" "%APP%" >>"%LOG%" 2>&1
+if exist "%APP%\DeskMate.exe" goto restart
+>>"%LOG%" echo [%DATE% %TIME%] new dir move failed, restoring
+move "%OLD%" "%APP%" >>"%LOG%" 2>&1
+goto failed
+:restart
+>>"%LOG%" echo [%DATE% %TIME%] new version in place, starting
 start "" "%APP%\DeskMate.exe" --restarted
 exit /b 0
-:restore
-move "%OLD%" "%APP%" >nul 2>&1
-:putback
+:failed
+>>"%LOG%" echo [%DATE% %TIME%] update FAILED
+echo failed> "%FLAG%"
 start "" "%APP%\DeskMate.exe" --restarted
 exit /b 1
 :giveup
-start "" "%APP%\DeskMate.exe" --restarted
+>>"%LOG%" echo [%DATE% %TIME%] giveup waiting pid %PID%
 exit /b 2
 """
 
 
-def _detached_flags() -> int:
+def _spawn_flags() -> int:
+    """给换目录脚本用的启动标志。
+
+    注意不能用 DETACHED_PROCESS：那样 cmd 没有控制台，它里面跑的 tasklist /
+    find 会各自新开一个可见的控制台窗口，表现就是右下角一直在闪黑框。
+    只用 CREATE_NO_WINDOW 的话 cmd 有一个隐藏控制台，子进程共用它，不闪。
+    """
     flags = 0
-    for name in ("DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP", "CREATE_NO_WINDOW"):
+    for name in ("CREATE_NO_WINDOW", "CREATE_NEW_PROCESS_GROUP"):
         flags |= int(getattr(subprocess, name, 0))
     return flags
 
 
-def _spawn_swap(app_dir: Path, new_dir: Path) -> "subprocess.Popen[bytes]":
+def update_failed() -> bool:
+    """上一次自动更新有没有失败（换目录脚本会留下标记）。"""
+    return (UPDATE_DIR / "failed.flag").exists()
+
+
+def clear_update_failed() -> None:
+    try:
+        (UPDATE_DIR / "failed.flag").unlink()
+    except OSError:
+        pass
+
+
+def swap_log() -> Path:
+    return UPDATE_DIR / "swap.log"
+
+
+def _spawn_swap(app_dir: Path, new_dir: Path, pid: int | None = None) -> "subprocess.Popen[bytes]":
     UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+    clear_update_failed()
     script = UPDATE_DIR / "swap.bat"
     script.write_text(_SWAP_BAT, encoding="ascii", newline="\r\n")
+    log = swap_log()
+    try:
+        log.write_text("", encoding="utf-8")
+    except OSError:
+        pass
     return subprocess.Popen(
-        ["cmd", "/c", str(script), str(app_dir), str(new_dir)],
+        [
+            "cmd",
+            "/c",
+            str(script),
+            str(app_dir),
+            str(new_dir),
+            str(pid or os.getpid()),
+            str(log),
+            str(UPDATE_DIR / "failed.flag"),
+        ],
         cwd=str(UPDATE_DIR),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=_detached_flags(),
+        creationflags=_spawn_flags(),
         close_fds=True,
     )
 
