@@ -25,9 +25,10 @@ import char_theme
 import cup
 import feishu
 import update
+import wrapup
 from card import MainCard
 from config import APP_TITLE, APP_VERSION, Config
-from engine import Engine
+from engine import Engine, parse_time
 from settings import SettingsWindow
 from shutdown import ShutdownScheduler, WARN_BEFORE
 from theme_ui import ThemeEditorWindow, ThemeManagerWindow, UpdateDialog
@@ -106,6 +107,7 @@ class DeskMate:
             self.cfg.save()
         self.engine = Engine(self.cfg)
         self.shutdown = ShutdownScheduler(self.cfg)
+        self._wrapup_date = ""
         self.toasts = ToastManager(self.cfg)
         self.settings_window: SettingsWindow | None = None
         self.theme_manager: ThemeManagerWindow | None = None
@@ -250,6 +252,7 @@ class DeskMate:
         self.settings_window.saved.connect(self.on_settings_saved)
         self.settings_window.request_themes.connect(self.open_theme_manager)
         self.settings_window.weather_changed.connect(self.refresh_weather)
+        self.settings_window.try_wrapup.connect(self.run_wrapup)
         self.settings_window.show()
         self.settings_window.setWindowIcon(app_icon())
         self._center_settings()
@@ -410,6 +413,7 @@ class DeskMate:
             self.dispatch(event)
 
         self._check_shutdown(now)
+        self._maybe_wrapup(now)
 
     def _update_tooltip(self) -> None:
         if not self.tray:
@@ -451,6 +455,51 @@ class DeskMate:
             show_sit(
                 self.toasts, event.minutes, event.hard, self.on_toast_action
             )
+
+    def _maybe_wrapup(self, now: datetime) -> None:
+        """到下班时间点做一次收尾：关微信 → 回桌面 → 关屏。
+
+        只在下班时刻前后 60 秒内触发一次；自动关机的那天跳过，交给关机流程。
+        """
+        if not self.cfg["wrapup_enabled"]:
+            return
+        if self.shutdown.target_of(now) is not None:
+            return
+        days = list(self.cfg["work_days"] or [])
+        if not days or now.weekday() not in days:
+            return
+        at = parse_time(self.cfg["off_work"], "18:00")
+        target = now.replace(hour=at.hour, minute=at.minute, second=0, microsecond=0)
+        delta = (now - target).total_seconds()
+        today = now.date().isoformat()
+        if 0 <= delta <= 60 and self._wrapup_date != today:
+            self._wrapup_date = today
+            log(f"下班收尾触发：{target:%H:%M}")
+            self.run_wrapup()
+
+    def run_wrapup(self) -> None:
+        """执行下班收尾三步，中间留点间隔让系统跟上。"""
+        try:
+            ok, detail = wrapup.close_wechat()
+        except Exception as exc:  # noqa: BLE001
+            ok, detail = False, f"异常：{exc}"
+        log(f"下班收尾·关微信：{detail}")
+        QTimer.singleShot(600 if ok else 200, self._wrapup_desktop)
+
+    def _wrapup_desktop(self) -> None:
+        try:
+            ok, detail = wrapup.show_desktop()
+        except Exception as exc:  # noqa: BLE001
+            ok, detail = False, f"异常：{exc}"
+        log(f"下班收尾·回桌面：{detail}")
+        QTimer.singleShot(700, self._wrapup_monitor)
+
+    def _wrapup_monitor(self) -> None:
+        try:
+            ok, detail = wrapup.monitor_off()
+        except Exception as exc:  # noqa: BLE001
+            ok, detail = False, f"异常：{exc}"
+        log(f"下班收尾·关屏：{detail}")
 
     def _check_shutdown(self, now: datetime) -> None:
         """到点自动关机：提前 5 分钟弹提醒，到点执行。"""

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -221,6 +222,7 @@ class SettingsWindow(QDialog):
     saved = Signal()
     request_themes = Signal()
     weather_changed = Signal()
+    try_wrapup = Signal()
 
     def __init__(self, cfg, parent: QWidget | None = None) -> None:
         super().__init__(
@@ -417,6 +419,30 @@ class SettingsWindow(QDialog):
         body.addWidget(self._divider())
         body.addSpacing(10)
 
+        # ---- 下班收尾 ----
+        body.addWidget(self._section("下班收尾"))
+        body.addSpacing(9)
+        self.wrapup_check = Check("下班时关闭微信、回到桌面并关闭显示器")
+        body.addWidget(self.wrapup_check)
+        body.addSpacing(7)
+        body.addWidget(
+            self._hint("只在下班时间点触发一次；自动关机的那天不执行")
+        )
+        body.addSpacing(9)
+        try_row = QHBoxLayout()
+        try_row.setContentsMargins(0, 0, 0, 0)
+        try_btn = QPushButton("立即执行一次")
+        try_btn.setObjectName("mini")
+        try_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        try_btn.setFixedHeight(28)
+        try_btn.clicked.connect(self._try_wrapup)
+        try_row.addWidget(try_btn)
+        try_row.addStretch(1)
+        body.addLayout(try_row)
+        body.addSpacing(14)
+        body.addWidget(self._divider())
+        body.addSpacing(10)
+
         # ---- 角色主题 ----
         body.addWidget(self._section("角色主题"))
         body.addSpacing(9)
@@ -575,10 +601,22 @@ class SettingsWindow(QDialog):
         for index, chip in enumerate(self.shutdown_week):
             chip.setChecked(index in shut_days)
         self.shutdown_time.setTime(_to_qtime(self.cfg["shutdown_time"], "21:30"))
+        self.wrapup_check.setChecked(bool(self.cfg["wrapup_enabled"]))
         self.refresh_theme()
         self.city_edit.setText(self.cfg["weather_city"] or "")
         self.sound_check.setChecked(bool(self.cfg["sound"]))
         self.startup_check.setChecked(config_module.is_autostart())
+
+    def _try_wrapup(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "立即执行下班收尾",
+            "会立刻结束微信进程、回到桌面并关闭显示器。\n确定现在执行吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.try_wrapup.emit()
 
     def refresh_theme(self) -> None:
         import char_theme
@@ -607,6 +645,7 @@ class SettingsWindow(QDialog):
                 "shutdown_enabled": self.shutdown_check.isChecked(),
                 "shutdown_days": shut_days,
                 "shutdown_time": self.shutdown_time.time().toString("HH:mm"),
+                "wrapup_enabled": self.wrapup_check.isChecked(),
                 "weather_city": self.city_edit.text().strip(),
                 "sound": self.sound_check.isChecked(),
             }
